@@ -172,9 +172,34 @@ export function AuthProvider({ children }) {
       setRole(null);
       return;
     }
-    // Redirect to match the sign-in flow; this navigates away.
-    await instance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
-  }, [instance]);
+
+    // Clear local state FIRST. If the Microsoft redirect is slow, blocked, or
+    // throws, the app must still leave the protected pages — otherwise the user
+    // clicks "Sign out" and simply stays on the dashboard.
+    setUser(null);
+    setRole(null);
+
+    // MSAL needs to know which account to end the session for; without this it
+    // can no-op when there is no active account set.
+    const account = instance.getActiveAccount() || accounts[0] || undefined;
+
+    try {
+      await instance.logoutRedirect({
+        account,
+        postLogoutRedirectUri: window.location.origin,
+      });
+    } catch (err) {
+      // Local state is already cleared, so ProtectedRoute will route to /login.
+      // Also drop MSAL's cached tokens so the next sign-in is a real one rather
+      // than a silent re-auth into the session we just tried to end.
+      console.error('[auth] sign-out redirect failed:', err);
+      try {
+        await instance.clearCache();
+      } catch {
+        // Nothing further to do; the session is already gone locally.
+      }
+    }
+  }, [instance, accounts]);
 
   // --- Clear local session when the API reports the token is no longer valid. ---
   useEffect(() => {
