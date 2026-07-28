@@ -1,0 +1,36 @@
+/* Desktop: sidebar + content only. There is no header row — the sidebar carries
+   the brand, the collapse toggle and the account block. */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-areas: 'sidebar content';
+  height: 100vh;
+  transition: grid-template-columns 0.22s ease;
+}
+
+.app-shell--collapsed {
+  grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+}
+
+.app-content {
+  grid-area: content;
+  overflow-y: auto;
+  padding: 28px;
+  background: var(--bg-app);
+}
+
+/* Mobile: the sidebar becomes an off-screen drawer, so a top bar is needed to
+   open it. */
+@media (max-width: 768px) {
+  .app-shell,
+  .app-shell--collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--header-height) 1fr;
+    grid-template-areas:
+      'header'
+      'content';
+  }
+  .app-content {
+    padding: 18px;
+  }
+}

@@ -1,0 +1,57 @@
+.chart-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 22px;
+}
+
+.chart-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-card-header p {
+  margin: 4px 0 16px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.chart-card-body {
+  width: 100%;
+}
+
+/* --- Pie leader-line labels --- */
+
+.pie-label-team {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  fill: var(--text-heading);
+}
+
+.pie-label-meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: var(--fw-regular);
+  fill: var(--text-secondary);
+}
+
+/* Empty state — shown until an admin adds applications. */
+.chart-empty {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.chart-empty p {
+  margin: 0;
+  padding: 0 20px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}

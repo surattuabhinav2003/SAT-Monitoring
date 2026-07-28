@@ -1,0 +1,400 @@
+﻿.sidebar {
+  grid-area: sidebar;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  transition: width 0.22s ease;
+  overflow: hidden;
+  z-index: 40;
+}
+
+.sidebar--collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: var(--header-height);
+  padding: 0 12px 0 18px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+/* Collapsed rail is only 68px — centre the mark and drop the side padding so it
+   isn't squeezed off-centre. */
+.sidebar--collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font-weight: var(--fw-semibold);
+  font-size: 0.78rem;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-brand-text {
+  font-weight: var(--fw-semibold);
+  font-size: 1.02rem;
+  color: var(--text-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chevron shown beside the name when expanded. */
+.brand-toggle {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.brand-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Collapsed: the SAT mark itself is the button that expands the rail. */
+.brand-logo-btn {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.brand-logo-btn:hover {
+  transform: scale(1.06);
+}
+
+.sidebar-nav {
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.sidebar-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-link--active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.sidebar-link--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 22px;
+  background: var(--accent-strong);
+  border-radius: 0 3px 3px 0;
+}
+
+.sidebar-link {
+  position: relative;
+}
+
+.sidebar-link-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Account block — pinned to the sidebar footer, menu opens upward
+   ========================================================================== */
+
+.sidebar-account {
+  position: relative;
+  flex-shrink: 0;
+  padding: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.account-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.account-trigger:hover,
+.account-trigger.is-open {
+  background: var(--bg-hover);
+  border-color: var(--border-color);
+}
+
+/* Collapsed rail: centre the avatar, drop the padding. */
+.sidebar--collapsed .account-trigger {
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.account-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: var(--fw-semibold);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.account-avatar--lg {
+  width: 42px;
+  height: 42px;
+  font-size: 0.9rem;
+}
+
+.account-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.25;
+  min-width: 0; /* let the name truncate instead of overflowing the rail */
+  flex: 1;
+}
+
+.account-name {
+  margin: 0;
+  max-width: 100%;
+  font-size: 0.84rem;
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-email {
+  margin: 2px 0 0;
+  max-width: 100%;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-role {
+  font-size: 0.66rem;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.account-role--admin { color: var(--accent); }
+.account-role--user { color: var(--text-tertiary); }
+
+.account-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.18s ease;
+}
+
+.account-trigger.is-open .account-chevron {
+  transform: rotate(180deg);
+}
+
+/* --- Menu (opens upward, above the trigger) --- */
+
+.account-menu {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 10px;
+  right: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 5;
+  animation: account-menu-in 0.15s ease-out;
+}
+
+/* Collapsed rail is 68px, far too narrow to hold the menu — and the sidebar
+   clips its overflow. Switch to `fixed` so the menu escapes that clipping and
+   flies out beside the rail at a usable width. */
+.sidebar--collapsed .account-menu {
+  position: fixed;
+  left: calc(var(--sidebar-collapsed-width) + 10px);
+  right: auto;
+  bottom: 14px;
+  width: 252px;
+  z-index: 60; /* above the sidebar itself */
+  animation: account-menu-fly 0.16s ease-out;
+}
+
+.account-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.account-menu-id {
+  min-width: 0; /* required for the ellipsis on long emails */
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.account-menu-item:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+@keyframes account-menu-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Collapsed: slides out from the rail rather than up from the trigger. */
+@keyframes account-menu-fly {
+  from {
+    transform: translateX(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-menu {
+    animation: none;
+  }
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+/* Mobile drawer behavior */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    width: var(--sidebar-width);
+  }
+  /* The drawer is always full width here, so the collapsed rail's rules must be
+     undone — including the brand row, which otherwise stays centred. */
+  .sidebar--collapsed {
+    width: var(--sidebar-width);
+  }
+  .sidebar--collapsed .sidebar-brand {
+    justify-content: space-between;
+    padding: 0 12px 0 18px;
+  }
+  .sidebar--collapsed .account-trigger {
+    justify-content: flex-start;
+    padding: 8px;
+  }
+  /* `.sidebar` is translated on mobile, which would make `fixed` resolve against
+     the sidebar rather than the viewport — put the menu back to absolute. */
+  .sidebar--collapsed .account-menu {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: calc(100% - 4px);
+    width: auto;
+    z-index: 5;
+    animation: account-menu-in 0.15s ease-out;
+  }
+  .sidebar--mobile-open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 39;
+  }
+  .sidebar-overlay.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

@@ -1,0 +1,16 @@
+.applications-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.error-state {
+  padding: 40px;
+  text-align: center;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-lg);
+}

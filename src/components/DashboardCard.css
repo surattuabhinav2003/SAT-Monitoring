@@ -1,0 +1,104 @@
+﻿.dash-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dash-card--clickable {
+  cursor: pointer;
+}
+
+.dash-card--clickable:hover,
+.dash-card--clickable:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.dash-card-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.dash-card--clickable:hover .dash-card-hint,
+.dash-card--clickable:focus-visible .dash-card-hint {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.dash-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.dash-card--live::before { background: var(--success); }
+.dash-card--decommissioned::before { background: var(--danger); }
+.dash-card--inactive::before { background: var(--warning); }
+.dash-card--gstack::before { background: var(--accent); }
+.dash-card--no-gstack::before { background: var(--text-tertiary); }
+
+.dash-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.dash-card--live .dash-card-icon { background: var(--success-soft); color: var(--success); }
+.dash-card--decommissioned .dash-card-icon { background: var(--danger-soft); color: var(--danger); }
+.dash-card--inactive .dash-card-icon { background: var(--warning-soft); color: var(--warning); }
+.dash-card--gstack .dash-card-icon { background: var(--accent-soft); color: var(--accent); }
+.dash-card--no-gstack .dash-card-icon { background: var(--bg-subtle); color: var(--text-secondary); }
+
+.dash-card-title {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.dash-card-count {
+  margin: 4px 0 0;
+  font-size: 2.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.dash-card-skeleton {
+  display: block;
+  margin-top: 8px;
+  width: 48px;
+  height: 30px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border-color) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}

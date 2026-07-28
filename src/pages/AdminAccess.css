@@ -1,0 +1,126 @@
+.admin-access-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* --- Grant panel --- */
+
+.access-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 22px;
+}
+
+.access-panel-header h2 {
+  margin: 0 0 4px;
+  font-size: var(--fs-h6);
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+}
+
+.access-panel-header p {
+  margin: 0 0 18px;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.grant-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.grant-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.grant-field label {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.grant-field input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.grant-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.grant-field input.has-error {
+  border-color: var(--danger);
+}
+
+.grant-field input.has-error:focus {
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.grant-field input:disabled {
+  background: var(--bg-subtle);
+  cursor: not-allowed;
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* Align the submit button with the input, not the label above it. */
+.grant-form .btn {
+  margin-top: 25px;
+}
+
+/* --- Current-admins table --- */
+
+.panel-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+}
+
+.you-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+}
+
+.row-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.row-action:disabled:hover {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+
+@media (max-width: 560px) {
+  .grant-form .btn {
+    margin-top: 0;
+    width: 100%;
+  }
+}

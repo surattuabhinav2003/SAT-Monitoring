@@ -1,0 +1,22 @@
+{
+  "name": "sat-monitoring-api",
+  "private": true,
+  "version": "1.0.0",
+  "description": "REST API and PostgreSQL persistence for SAT Monitoring",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "jose": "^6.2.4",
+    "pg": "^8.13.1"
+  }
+}

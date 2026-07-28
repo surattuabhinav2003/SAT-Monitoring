@@ -1,0 +1,85 @@
+/**
+ * Design tokens for SAT Monitoring.
+ *
+ * Sourced from the CloudFuze brand guidelines — the brand is BLUE
+ * (#0129AC deep / #0C18D4 bright / #809EFC light). Never violet or magenta.
+ * Poppins only, and 600 is the heaviest approved weight.
+ */
+:root {
+  /* --- Typography --- */
+  --font-sans: 'Poppins', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto,
+    Helvetica, Arial, sans-serif;
+
+  /* Approved weights — there is no 700/800 in the brand. */
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* Brand heading scale (all weight 600, line-height = size x 1.4) */
+  --fs-h1: 46px;
+  --fs-h2: 36px;
+  --fs-h3: 32px;
+  --fs-h4: 28px;
+  --fs-h5: 24px;
+  --fs-h6: 20px;
+  --fs-body: 16px;
+  --fs-sm: 14px;
+
+  /* --- Layout --- */
+  --sidebar-width: 248px;
+  --sidebar-collapsed-width: 68px;
+  --header-height: 60px;
+
+  /* --- Radius --- brand buttons are 4px, so the family stays tight --- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* --- Primary brand colours --- */
+  --brand-deep-blue: #0129ac;
+  --brand-bright-blue: #0c18d4;
+  --brand-light-blue: #809efc;
+  --brand-tint: #e1ecff;
+  --brand-teal: #14cfc3;
+
+  /* Darker shades of the primary, for immersive/inverted surfaces */
+  --brand-navy: #011b73;
+  --brand-navy-deep: #01123c;
+
+  /* Accent roles (bright blue is the brand's hover state) */
+  --accent: #0129ac;
+  --accent-strong: #0c18d4;
+  --accent-light: #809efc;
+  --accent-soft: rgba(1, 41, 172, 0.1);
+
+  --brand-gradient: linear-gradient(155deg, #011b73 0%, #0129ac 55%, #0c18d4 100%);
+
+  /* --- Semantic — drawn from the brand accent set --- */
+  --success: #20cc83;
+  --success-soft: rgba(32, 204, 131, 0.14);
+  --danger: #ff1f1f;
+  --danger-soft: rgba(255, 31, 31, 0.12);
+  --warning: #fe5833;
+  --warning-soft: rgba(254, 88, 51, 0.14);
+
+  /* --- Surfaces --- */
+  --bg-app: #f6f6f6;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-subtle: #f1f1f1;
+  --bg-hover: #e1ecff;
+  --bg-input: #ffffff;
+
+  /* --- Text — headings black, body dark grey, secondary mid grey --- */
+  --text-heading: #000000;
+  --text-primary: #2e2e2e;
+  --text-secondary: #707070;
+  --text-tertiary: #9a9a9a; /* derived: lighter step off mid grey */
+
+  /* --- Borders + shadows (shadows tinted with the primary) --- */
+  --border-color: #ebebeb;
+  --shadow-sm: 0 1px 2px rgba(1, 41, 172, 0.07), 0 1px 3px rgba(1, 41, 172, 0.05);
+  --shadow-md: 0 4px 14px rgba(1, 41, 172, 0.1);
+  --shadow-lg: 0 12px 34px rgba(1, 41, 172, 0.16);
+}

@@ -1,0 +1,148 @@
+/* --- Reset & base --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* --- Brand type scale: headings are weight 600, black, line-height x1.4,
+       margin-bottom x0.4. Sizes step down 46/36/32/28/24/20. --- */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0 0 0.4em;
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  color: var(--text-heading);
+}
+
+h1 { font-size: var(--fs-h1); }
+h2 { font-size: var(--fs-h2); }
+h3 { font-size: var(--fs-h3); }
+h4 { font-size: var(--fs-h4); }
+h5 { font-size: var(--fs-h5); }
+h6 { font-size: var(--fs-h6); }
+
+/* Brand body copy: 16px / 400 / dark grey, generous leading. */
+p {
+  margin: 0 0 20px;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+
+/* Links: weight 500, brand blue. */
+a {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+
+/* Form controls don't inherit the body font by default — force Poppins everywhere. */
+button,
+input,
+select,
+textarea,
+optgroup {
+  font-family: inherit;
+}
+
+/* --- Shared button system ---
+   Brand CTA spec: 10px/20px padding, 4px radius, weight 600. Sizes are
+   Regular 14px / Medium 16px / Large 18px — .btn is Regular. --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    transform 0.05s ease;
+  white-space: nowrap;
+}
+
+/* Medium / Large CTA steps. */
+.btn--md { font-size: var(--fs-body); }
+.btn--lg { font-size: 18px; }
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Brand secondary button: white fill, brand-blue border and text. */
+.btn--ghost {
+  background: var(--bg-surface);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--brand-tint);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+
+.btn--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn--danger:hover:not(:disabled) {
+  filter: brightness(0.94);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Scrollbar polish --- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}

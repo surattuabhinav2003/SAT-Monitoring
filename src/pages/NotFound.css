@@ -1,0 +1,28 @@
+﻿.notfound {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
+.notfound-code {
+  font-size: 5rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.notfound h1 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.notfound p {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+}

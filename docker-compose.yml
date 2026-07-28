@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sat-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sat_monitoring}
+      POSTGRES_USER: ${POSTGRES_USER:-sat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sat_local_password}
+    ports:
+      # Exposed so you can inspect the data with psql / pgAdmin / DBeaver.
+      - '5433:5432'
+    volumes:
+      - sat_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-sat} -d ${POSTGRES_DB:-sat_monitoring}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: ./backend
+    container_name: sat-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Defaults to production so a deployment is safe by default; a local run
+      # sets `development` in .env to allow DEV_AUTH_BYPASS.
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      # `db` is the compose service name — resolved on the internal network.
+      DATABASE_URL: postgres://${POSTGRES_USER:-sat}:${POSTGRES_PASSWORD:-sat_local_password}@db:5432/${POSTGRES_DB:-sat_monitoring}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5180}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      ADMIN_ALLOWED_DOMAINS: ${ADMIN_ALLOWED_DOMAINS:-}
+      # Token verification. Without these, every request is rejected unless
+      # DEV_AUTH_BYPASS is on.
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      # Local development only — see .env.example.
+      DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
+      DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
+    ports:
+      - '4000:4000'
+
+volumes:
+  sat_pgdata:

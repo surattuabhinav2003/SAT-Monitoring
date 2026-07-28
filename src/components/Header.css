@@ -1,0 +1,43 @@
+/* Mobile-only bar. Hidden on desktop, where the sidebar carries the brand,
+   the collapse toggle and the account block. */
+.header {
+  display: none;
+}
+
+.header-title {
+  font-size: 1rem;
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .header {
+    grid-area: header;
+    height: var(--header-height);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 30;
+  }
+}
