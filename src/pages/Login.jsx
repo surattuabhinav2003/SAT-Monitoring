@@ -29,13 +29,19 @@ export default function Login() {
   async function handleLogin(demoRole) {
     setBusy(true);
     try {
-      await login(demoRole);
-      toast.success('Signed in successfully.');
+      const result = await login(demoRole);
+      // Real sign-in navigates to Microsoft and returns null, so a success
+      // toast here would be premature — and misleading if the redirect stalls.
+      // Only the simulated demo login completes in place.
+      if (result) toast.success('Signed in successfully.');
     } catch (err) {
       toast.error(err.message || 'Sign in failed. Please try again.');
-    } finally {
       setBusy(false);
+      return;
     }
+    // Leave `busy` set on the real flow: the page is navigating away, and
+    // re-enabling the button invites a second click mid-redirect.
+    if (DEMO_MODE) setBusy(false);
   }
 
   return (

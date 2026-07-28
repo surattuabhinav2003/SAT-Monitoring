@@ -29,12 +29,33 @@ const SELECT = `
   FROM applications
 `;
 
+/**
+ * Snap a free-text label to the spelling already used for it, matching
+ * case-insensitively and ignoring repeated whitespace.
+ *
+ * Without this, "Migration" and "migration" are stored as two distinct values
+ * and every grouping — the team pie chart especially — reports them as two
+ * separate teams. First spelling wins, so later entries fall in line with it.
+ */
+async function canonicalise(column, value) {
+  const { rows } = await query(
+    `SELECT ${column} AS label
+       FROM applications
+      WHERE lower(${column}) = lower($1)
+      ORDER BY id ASC
+      LIMIT 1`,
+    [value]
+  );
+  return rows.length > 0 ? rows[0].label : value;
+}
+
 /** Validate and normalise an incoming application payload. */
 function readPayload(body) {
   const name = String(body?.name ?? '').trim();
   const url = String(body?.url ?? '').trim();
-  const team = String(body?.team ?? '').trim();
-  const developedBy = String(body?.developedBy ?? '').trim();
+  // Collapse internal runs of whitespace so "Web  Team" matches "Web Team".
+  const team = String(body?.team ?? '').trim().replace(/\s+/g, ' ');
+  const developedBy = String(body?.developedBy ?? '').trim().replace(/\s+/g, ' ');
   const status = body?.status === 'Inactive' ? 'Inactive' : 'Active';
 
   if (!name) throw new ApiError(400, 'Application name is required.');
@@ -68,7 +89,10 @@ function readId(raw) {
 router.get(
   '/',
   asyncRoute(async (_req, res) => {
-    const { rows } = await query(`${SELECT} ORDER BY name ASC`);
+    // lower(name), not name: the database collation sorts by byte value, which
+    // puts every capitalised name before every lowercase one ("Zebra" before
+    // "apple"). Case-insensitive ordering is what a reader expects.
+    const { rows } = await query(`${SELECT} ORDER BY lower(name) ASC, id ASC`);
     res.json(rows.map(toDto));
   })
 );
@@ -79,6 +103,8 @@ router.post(
   requireAdmin,
   asyncRoute(async (req, res) => {
     const app = readPayload(req.body);
+    app.team = await canonicalise('team', app.team);
+    app.developedBy = await canonicalise('developed_by', app.developedBy);
     try {
       const { rows } = await query(
         `INSERT INTO applications
@@ -114,6 +140,8 @@ router.put(
   asyncRoute(async (req, res) => {
     const id = readId(req.params.id);
     const app = readPayload(req.body);
+    app.team = await canonicalise('team', app.team);
+    app.developedBy = await canonicalise('developed_by', app.developedBy);
     try {
       const { rows } = await query(
         `UPDATE applications

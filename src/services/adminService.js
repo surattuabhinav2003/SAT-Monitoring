@@ -14,14 +14,14 @@ import api from './api.js';
  */
 
 /**
- * Domain allow-list mirrored for client-side messaging.
+ * Domain allow-list, mirrored here purely so the UI can state the rule up front
+ * and reject a bad address without a round trip.
  *
- * Intentionally EMPTY — any well-formed address is accepted, per the current
- * requirement. When the permitted domains are confirmed, set
- * ADMIN_ALLOWED_DOMAINS in the backend `.env` (that is the authoritative
- * setting) and list them here too so the UI can explain the rule up front.
+ * `ADMIN_ALLOWED_DOMAINS` in the backend `.env` is the AUTHORITATIVE setting —
+ * keep the two in step. Changing this list alone grants nothing, and clearing it
+ * bypasses nothing.
  */
-export const ALLOWED_DOMAINS = [];
+export const ALLOWED_DOMAINS = ['cloudfuze.com'];
 
 export function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();

@@ -46,8 +46,9 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((r) =>
+        // Guarded: one missing field would otherwise throw and blank the table.
         [r.name, r.url, r.team, r.developedBy].some((v) =>
-          v.toLowerCase().includes(q)
+          String(v ?? '').toLowerCase().includes(q)
         )
       );
     }

@@ -106,10 +106,25 @@ export default function Dashboard() {
   );
 
   // Pie chart data — team-wise usage.
+  //
+  // Grouped case-insensitively: the API keeps spellings consistent on write, but
+  // older rows (or anything inserted straight into the database) can still hold
+  // both "Migration" and "migration", which would otherwise chart as two teams.
+  // The first spelling encountered is used as the label.
   const teamData = useMemo(() => {
     const map = new Map();
-    apps.forEach((a) => map.set(a.team, (map.get(a.team) || 0) + 1));
-    return Array.from(map, ([team, count]) => ({ team, count }));
+    apps.forEach((a) => {
+      const raw = (a.team || '').trim();
+      if (!raw) return;
+      const key = raw.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(key, { team: raw, count: 1 });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
   }, [apps]);
 
   const isEmpty = !loading && apps.length === 0;
