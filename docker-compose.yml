@@ -7,9 +7,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-sat_monitoring}
       POSTGRES_USER: ${POSTGRES_USER:-sat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sat_local_password}
+    # No `ports` in production: the database should only be reachable on the
+    # internal compose network. Uncomment locally to inspect it with psql.
     ports:
-      # Exposed so you can inspect the data with psql / pgAdmin / DBeaver.
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - sat_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,6 +19,14 @@ services:
       timeout: 5s
       retries: 12
 
+  # =========================================================================
+  # API — serves the SPA's REST calls.
+  #
+  # HAS NO DOCKER ACCESS. There is deliberately no docker.sock mount here: the
+  # socket is root-equivalent on the host, and the API is the process exposed to
+  # authenticated users. A manual scan is REQUESTED from the worker over a
+  # Postgres NOTIFY channel instead.
+  # =========================================================================
   api:
     build: ./backend
     container_name: sat-api
@@ -26,43 +35,72 @@ services:
       db:
         condition: service_healthy
     environment:
-      # Defaults to production so a deployment is safe by default; a local run
-      # sets `development` in .env to allow DEV_AUTH_BYPASS.
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 4000
-      # `db` is the compose service name — resolved on the internal network.
       DATABASE_URL: postgres://${POSTGRES_USER:-sat}:${POSTGRES_PASSWORD:-sat_local_password}@db:5432/${POSTGRES_DB:-sat_monitoring}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5180}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       ADMIN_ALLOWED_DOMAINS: ${ADMIN_ALLOWED_DOMAINS:-}
-      # Token verification. Without these, every request is rejected unless
-      # DEV_AUTH_BYPASS is on.
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
-      # Local development only — see .env.example.
       DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
       DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
-      # --- Docker discovery ---
-      # Set false here if you run the standalone worker instead, so the two do
-      # not both sync.
-      DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-true}
-      DISCOVERY_CRON: ${DISCOVERY_CRON:-*/5 * * * *}
-      DISCOVERY_BASE_DOMAIN: ${DISCOVERY_BASE_DOMAIN:-cftools.live}
-      DISCOVERY_URL_SCHEME: ${DISCOVERY_URL_SCHEME:-https}
-      DISCOVERY_EXCLUDE: ${DISCOVERY_EXCLUDE:-}
-      # Restricts the on-demand "Run Discovery" trigger only; blank = any admin.
+      # Never enable discovery in the API — that would require the socket.
+      DISCOVERY_ENABLED: 'false'
       DISCOVERY_OPERATORS: ${DISCOVERY_OPERATORS:-}
     ports:
       - '4000:4000'
+    # Defence in depth: the API needs no write access to its own filesystem and
+    # no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  # =========================================================================
+  # Discovery worker — the ONLY component with Docker access.
+  #
+  # Reads the local socket read-only, writes findings to Postgres, and listens
+  # for on-demand run requests. Exposes no ports: nothing can reach it over the
+  # network, so its Docker privilege has no external attack surface.
+  # =========================================================================
+  worker:
+    build: ./backend
+    container_name: sat-worker
+    restart: unless-stopped
+    command: ['node', 'src/discovery/worker.js']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-sat}:${POSTGRES_PASSWORD:-sat_local_password}@db:5432/${POSTGRES_DB:-sat_monitoring}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      DISCOVERY_ENABLED: 'true'
+      DISCOVERY_CRON: ${DISCOVERY_CRON:-*/5 * * * *}
+      DISCOVERY_URL_SCHEME: ${DISCOVERY_URL_SCHEME:-https}
+      DISCOVERY_EXCLUDE: ${DISCOVERY_EXCLUDE:-}
+      DISCOVERY_EXCLUDE_DEFAULTS: ${DISCOVERY_EXCLUDE_DEFAULTS:-true}
+      # Where the worker reads nginx vhosts to map hostnames to containers.
+      # Always set inside the container; what matters is which HOST directory is
+      # mounted there (NGINX_CONF_HOST_DIR below). An empty directory simply
+      # yields no routes, so unmapped applications are flagged for an admin
+      # rather than given a guessed URL.
+      NGINX_CONF_DIR: /etc/nginx-sat
     volumes:
-      # Read-only Docker socket so discovery can enumerate local containers.
-      #
-      # SECURITY: socket access is root-equivalent on the host — `:ro` limits
-      # writes through the API but not what the daemon can be asked to reveal.
-      # For production prefer the standalone worker (see docker-compose.test.yml)
-      # so only that container holds the socket, and set DISCOVERY_ENABLED=false
-      # here.
+      # SECURITY: root-equivalent on the host. Confined to this container, which
+      # has no ports published and serves no user traffic.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # nginx vhosts, read-only. Point NGINX_CONF_HOST_DIR at the real directory
+      # on the server (e.g. /etc/nginx/sites-enabled); it defaults to the empty
+      # ./nginx-conf folder so a fresh clone starts without nginx mapping.
+      - ${NGINX_CONF_HOST_DIR:-./nginx-conf}:/etc/nginx-sat:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   sat_pgdata:

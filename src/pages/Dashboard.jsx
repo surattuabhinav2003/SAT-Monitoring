@@ -4,7 +4,10 @@ import DashboardCard from '../components/DashboardCard.jsx';
 import Modal from '../components/Modal.jsx';
 import CategoryBarChart from '../components/CategoryBarChart.jsx';
 import TeamPieChart from '../components/TeamPieChart.jsx';
-import { getApplications } from '../services/applicationService.js';
+import {
+  getApplications,
+  getDiscoveryState,
+} from '../services/applicationService.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 // Drill-down rows reuse the shared .badge styles.
@@ -26,11 +29,25 @@ const CATEGORIES = {
     match: (a) => a.status === 'Inactive' && !a.decommissioned,
   },
   // Discovery says it is down, but no admin has decided what that means yet.
-  // Same predicate as `inactive` — kept separate because it is a call to action
-  // rather than a status breakdown, and it leads to the filtered list.
+  // Kept separate from `inactive` because it is a call to action rather than a
+  // status breakdown, and it leads to the filtered list.
   review: {
     title: 'Applications Requiring Review',
-    match: (a) => a.status === 'Inactive' && !a.decommissioned,
+    match: (a) => a.needsReview,
+  },
+  // Newly discovered, awaiting an admin's confirmation that it belongs here.
+  pending: {
+    title: 'Awaiting Approval',
+    match: (a) => a.pendingReview,
+  },
+  // No sat.url label and no nginx route — discovery refused to guess.
+  mapping: {
+    title: 'Needing URL Mapping',
+    match: (a) => a.needsMapping,
+  },
+  warning: {
+    title: 'Unhealthy Applications',
+    match: (a) => a.status === 'Warning' && !a.decommissioned,
   },
   gstack: {
     title: 'Gstack Implemented',
@@ -43,16 +60,18 @@ const CATEGORIES = {
 };
 
 /**
- * Dashboard page. Every figure here derives from the applications an admin has
- * added — there is no seed data, so an empty portal shows zeros.
+ * Dashboard page. Every figure derives from applications discovered from Docker,
+ * so an empty portal shows zeros until the worker has run.
  *
- * Two sections: application status, and gstack implementation. Clicking any
- * card opens a popup listing the applications in that category.
+ * Calls to action come first (awaiting approval, needing a URL, requiring
+ * review), then the status and gstack breakdowns. Clicking any card opens a
+ * popup listing the applications behind the number.
  */
 export default function Dashboard() {
   const { user } = useAuth();
   const toast = useToast();
   const [apps, setApps] = useState([]);
+  const [latestRun, setLatestRun] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState(null);
 
@@ -61,8 +80,15 @@ export default function Dashboard() {
     async function load() {
       setLoading(true);
       try {
-        const data = await getApplications();
-        if (!cancelled) setApps(data);
+        const [data, state] = await Promise.all([
+          getApplications(),
+          // Non-fatal: the dashboard still works without run metrics.
+          getDiscoveryState().catch(() => null),
+        ]);
+        if (!cancelled) {
+          setApps(data);
+          setLatestRun(state?.latestRun || null);
+        }
       } catch (err) {
         toast.error(err.message);
       } finally {
@@ -156,8 +182,42 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Call to action, above the status breakdown: these need a human
-          decision — restart the tool, or mark it decommissioned. */}
+      {/* Calls to action, above the status breakdown: each needs a human
+          decision, and each links to the matching filtered list. */}
+      {counts.pending > 0 && (
+        <Link to="/applications?filter=pending" className="dash-review dash-review--info">
+          <span className="dash-review-count">{counts.pending}</span>
+          <span className="dash-review-text">
+            <strong>
+              {counts.pending === 1
+                ? 'New application awaiting approval'
+                : 'New applications awaiting approval'}
+            </strong>
+            <small>
+              Discovered from Docker but not yet confirmed. Approve to start
+              tracking, then set the team and owner.
+            </small>
+          </span>
+          <span className="dash-review-go">Approve →</span>
+        </Link>
+      )}
+
+      {counts.mapping > 0 && (
+        <Link to="/applications?filter=mapping" className="dash-review">
+          <span className="dash-review-count">{counts.mapping}</span>
+          <span className="dash-review-text">
+            <strong>
+              {counts.mapping === 1 ? 'Application needs a URL' : 'Applications need a URL'}
+            </strong>
+            <small>
+              No <code>sat.url</code> label and no matching nginx route, so no URL
+              was guessed. Add one, or label the container.
+            </small>
+          </span>
+          <span className="dash-review-go">Map →</span>
+        </Link>
+      )}
+
       {counts.review > 0 && (
         <Link to="/applications?filter=review" className="dash-review">
           <span className="dash-review-count">{counts.review}</span>
@@ -174,6 +234,26 @@ export default function Dashboard() {
           </span>
           <span className="dash-review-go">Review →</span>
         </Link>
+      )}
+
+      {latestRun && (
+        <p className="dash-run">
+          {latestRun.errors ? (
+            <>
+              <span className="dash-run-bad">Last discovery failed</span> —{' '}
+              {latestRun.errors}
+            </>
+          ) : (
+            <>
+              Last discovery {relativeTime(latestRun.startedAt)} —{' '}
+              {latestRun.containersScanned} container(s) scanned,{' '}
+              {latestRun.applicationsDiscovered} new,{' '}
+              {latestRun.applicationsUpdated} unchanged,{' '}
+              {latestRun.applicationsDeactivated} stopped
+              {latestRun.durationMs != null && ` · ${latestRun.durationMs} ms`}
+            </>
+          )}
+        </p>
       )}
 
       {/* --- Section: application status --- */}
@@ -288,6 +368,24 @@ export default function Dashboard() {
       </Modal>
     </div>
   );
+}
+
+/** "4 minutes ago" for the last-discovery line. */
+function relativeTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'recently';
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins === 1) return '1 minute ago';
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  return d.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /* --- Inline icons --- */

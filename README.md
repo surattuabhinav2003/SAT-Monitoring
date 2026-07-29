@@ -28,31 +28,73 @@ brand guidelines (Poppins, brand blue `#0129AC`).
 ## How discovery works
 
 ```
-Docker containers  ->  Discovery worker  ->  API  ->  PostgreSQL  ->  Dashboard
+Docker daemon ─┐
+nginx config ──┴─► Discovery worker ──► PostgreSQL ──► API ──► Dashboard
+                   (the ONLY component        ▲
+                    with Docker access)       │  NOTIFY sat_discovery_run
+                                              └───────── API (no Docker access)
 ```
 
 The worker talks to the **local Docker socket only** — no SSH, no remote host, no
-stored credentials. It runs every 5 minutes and reconciles the inventory:
+stored credentials. It runs every 5 minutes and reconciles the inventory.
+
+**The API has no Docker privileges.** It is the process exposed to users, so
+giving it socket access would put host root one code-execution bug away. A manual
+scan is *requested* over a Postgres `NOTIFY` channel and executed by the worker;
+the endpoint returns `202`, and the result appears in the run history.
 
 | Situation | What happens |
 |---|---|
-| New container appears | Application created, `status=Active`, business metadata left blank for an admin |
+| New container appears | Application created as **`pending_review`**; an admin approves it before it is tracked |
 | Container still running | `last_seen` refreshed; nothing else touched |
-| Container stopped or gone | `status=Inactive`, one notification raised. **Never deleted, never auto-decommissioned.** |
-| Container comes back | `status=Active`, recovery notification, outage notification resolved |
+| Container unhealthy (Docker HEALTHCHECK) | `status=Warning` — degraded, not down |
+| Container stopped or gone | `status=Inactive`, one notification. **Never deleted, never auto-decommissioned.** |
+| Container comes back | `status=Active`, recovery notification, outage resolved |
 
-**Grouping:** containers in the same Compose project count as **one** application,
-so a tool made of frontend + backend + db is a single entry. A `sat.url` or
-`sat.name` label opts a container out of grouping and makes it its own tool.
+### URL resolution — never guessed
 
-**Exclusions:** databases, caches and reverse proxies are skipped by image, and
-the portal never inventories itself. `DISCOVERY_EXCLUDE` adds names or projects,
-and a `sat.ignore=true` label opts an individual container out.
+| Priority | Source | Result |
+|---|---|---|
+| 1 | `sat.url` label on the container | `url_source=label` |
+| 2 | nginx `server_name` / `proxy_pass` | `url_source=nginx` |
+| 3 | neither | **`url` stays NULL and the application is flagged "Needs Mapping"** |
+
+Deriving a hostname from the container name was removed deliberately: it produced
+confident-looking URLs that were wrong, which is worse in a monitoring tool than
+an obvious gap an admin can fill. Point `NGINX_CONF_HOST_DIR` at the real vhost
+directory (mounted read-only) to enable priority 2.
+
+**Status mapping** from Docker: `healthy`/no healthcheck → `Active`;
+`unhealthy`/`starting` → `Warning`; anything not running → `Inactive`. The raw
+Docker state and health string are stored alongside.
+
+**Grouping:** containers in the same Compose project count as **one** application.
+A `sat.url`/`sat.name` label opts a container out of grouping.
+
+**Exclusions:** `postgres`, `mongo`, `mongodb`, `redis`, `nginx`, `traefik`,
+`worker`, `sat-api`, `sat-db`, `mongo-express` and more, matched on name, compose
+service *and* image. `DISCOVERY_EXCLUDE` adds your own (and overrides a label);
+the built-in list does **not** override a label. `sat.ignore=true` opts a
+container out entirely.
+
+**Concurrency:** a Postgres advisory lock serialises passes across processes, so a
+scheduled and a manual scan can never run together. A request arriving mid-pass
+is coalesced.
+
+**Metrics:** every pass writes a `discovery_runs` row (timings, counts, errors).
+The latest appears on the dashboard and Applications page.
 
 **Who can trigger a scan:** the scheduled pass always runs. The on-demand
-**Run Discovery** button is limited to the addresses in `DISCOVERY_OPERATORS`
-(each must also be an admin); blank means any admin. The button is hidden for
-everyone else and the API returns `403`, so it is enforced on both sides.
+**Run Discovery** button is limited to `DISCOVERY_OPERATORS` (each must also be an
+admin); blank means any admin. Hidden in the UI *and* enforced with a `403`.
+
+### Security
+
+See [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) for the full review and
+the remaining risks. The headline: Docker socket access is root-equivalent on the
+host, so it is confined to the worker, which publishes no ports. The single
+highest-value further hardening is putting a read-only Docker socket proxy in
+front of it.
 
 **Field ownership — the rule discovery must never break:**
 
@@ -74,9 +116,12 @@ node scripts/test-discovery.mjs
 docker compose -p sattest -f docker-compose.test.yml down -v
 ```
 
-Covers all six acceptance scenarios: auto-create, stop → Inactive + notification,
-restart → recovery, admin metadata surviving a sync, container removal not
-deleting the record, and audit records. 54 assertions.
+Mirrors the production shape (API without Docker, worker with it) and covers:
+API privilege separation, URL priority including the "Needs Mapping" path, all
+ten infrastructure exclusions, the pending-review/approval workflow, admin
+metadata surviving passes, stop/restart notifications, container removal never
+deleting, decommission auditing, run metrics, and advisory-lock serialisation.
+**98 assertions.**
 
 > If the normal stack is also running on the same machine, keep `sattest` in
 > `DISCOVERY_EXCLUDE` so the harness does not appear in your real inventory.

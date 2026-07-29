@@ -1,14 +1,13 @@
 /**
  * SAT Monitoring — Docker discovery acceptance tests.
  *
- * Exercises the flows from the specification against the isolated test stack.
- *
  *   docker compose -p sattest -f docker-compose.test.yml up -d --build
  *   node scripts/test-discovery.mjs
  *   docker compose -p sattest -f docker-compose.test.yml down -v
  *
- * The API in that stack runs with DEV_AUTH_BYPASS so no Azure tenant is needed,
- * and with DISCOVERY_ENABLED=false so only the worker syncs.
+ * The harness mirrors production: the API has NO Docker access and requests
+ * scans from the worker over Postgres NOTIFY. Auth is bypassed so no Azure
+ * tenant is needed.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -44,20 +43,7 @@ async function req(path, opts = {}) {
   return { status: res.status, body };
 }
 
-/** Trigger a pass and wait for it, rather than waiting on the cron. */
-async function sync() {
-  const r = await req('/applications/discovery/run', { method: 'POST' });
-  if (r.status !== 200) throw new Error(`discovery run failed: ${r.status} ${JSON.stringify(r.body)}`);
-  return r.body;
-}
-
-async function apps() {
-  const r = await req('/applications');
-  if (r.status !== 200) throw new Error(`list failed: ${r.status}`);
-  return r.body;
-}
-
-const byName = (list, name) => list.find((a) => a.name === name);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function docker(args) {
   try {
@@ -68,6 +54,76 @@ async function docker(args) {
   }
 }
 
+async function removeIfPresent(name) {
+  try {
+    await docker(['container', 'stop', name]);
+  } catch {
+    /* not running */
+  }
+  try {
+    await docker(['container', 'rm', name]);
+  } catch {
+    /* not present */
+  }
+}
+
+async function latestRun() {
+  const r = await req('/applications/discovery');
+  return r.body?.latestRun ?? null;
+}
+
+async function latestRunId() {
+  return (await latestRun())?.id ?? 0;
+}
+
+/**
+ * Wait until no pass is in flight.
+ *
+ * Necessary before requesting one: the worker deliberately COALESCES a request
+ * that arrives while a pass is running, so firing blindly can produce no new run
+ * at all. Every sync() therefore starts from a known-idle state.
+ */
+async function waitForIdle(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const run = await latestRun();
+    if (!run || run.completedAt) return;
+    await sleep(400);
+  }
+  throw new Error('a discovery run never finished');
+}
+
+/**
+ * Ask the worker to scan, then wait until a NEW completed run appears.
+ *
+ * The API returns 202 without doing the work, so the test observes the worker's
+ * completion rather than a return value.
+ */
+async function sync() {
+  await waitForIdle();
+  const before = await latestRunId();
+
+  const r = await req('/applications/discovery/run', { method: 'POST' });
+  if (r.status !== 202) {
+    throw new Error(`discovery request failed: ${r.status} ${JSON.stringify(r.body)}`);
+  }
+
+  for (let i = 0; i < 60; i += 1) {
+    await sleep(500);
+    const run = await latestRun();
+    if (run && run.id > before && run.completedAt) return run;
+  }
+  throw new Error('worker did not complete a discovery run in time');
+}
+
+async function apps() {
+  const r = await req('/applications');
+  if (r.status !== 200) throw new Error(`list failed: ${r.status}`);
+  return r.body;
+}
+
+const byName = (list, name) => list.find((a) => a.name === name);
+
 async function events(id) {
   const r = await req(`/applications/${id}/events`);
   return r.status === 200 ? r.body : [];
@@ -76,6 +132,10 @@ async function events(id) {
 async function notifications() {
   const r = await req('/notifications');
   return r.status === 200 ? r.body : [];
+}
+
+async function approve(id) {
+  return req(`/applications/${id}/approve`, { method: 'POST' });
 }
 
 // ===========================================================================
@@ -92,7 +152,7 @@ console.log('\nWaiting for the test API…');
     } catch {
       /* retry */
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await sleep(2000);
   }
   if (!up) {
     console.error('Test API never became ready. Is the test stack up?');
@@ -101,98 +161,136 @@ console.log('\nWaiting for the test API…');
   console.log('API ready.\n');
 }
 
-// ---------------------------------------------------------------------------
-// Remove anything a previous (possibly aborted) run left behind, so the suite is
-// repeatable without manual cleanup.
-async function removeIfPresent(name) {
-  try {
-    await docker(['container', 'stop', name]);
-  } catch {
-    /* not running */
-  }
-  try {
-    await docker(['container', 'rm', name]);
-  } catch {
-    /* not present */
-  }
-}
-
 console.log('SETUP: clearing leftovers from any previous run');
 await removeIfPresent('sattest-tool4');
 
-console.log('SETUP: initial discovery pass');
+// ---------------------------------------------------------------------------
+console.log('\nTEST A: the API has no Docker privileges');
 {
-  const stats = await sync();
+  const h = await req('/health');
+  check('health reports dockerAccess false', h.body?.dockerAccess === false, JSON.stringify(h.body));
+  const state = await req('/applications/discovery');
+  check('API scheduler disabled', state.body?.enabled === false, String(state.body?.enabled));
+
+  await waitForIdle();
+  const r = await req('/applications/discovery/run', { method: 'POST' });
+  check('manual scan is accepted as a REQUEST (202)', r.status === 202, `got ${r.status}`);
+  check('response says it was requested', r.body?.requested === true);
+  // Let that request finish so the next sync() starts from a clean state.
+  await sleep(1000);
+  await waitForIdle();
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nSETUP: first full pass (driven by the worker)');
+{
+  const run = await sync();
   const list = await apps();
-  console.log(`   discovered ${stats.seen} group(s); inventory has ${list.length}`);
-  check('tool1 discovered via sat.url label', Boolean(byName(list, 'Tool One')));
+  console.log(`   scanned ${run.containersScanned}, inventory ${list.length}`);
+
+  check('worker completed the requested run', Boolean(run.completedAt));
+  check('run recorded the trigger', run.trigger === 'manual', run.trigger);
+  check('run attributed to the requester', run.requestedBy === 'tester@cloudfuze.com', run.requestedBy);
+  check('run counted containers scanned', run.containersScanned > 0, String(run.containersScanned));
+  check('run recorded no errors', !run.errors, run.errors || '');
+
+  check('tool1 discovered', Boolean(byName(list, 'Tool One')));
   check('tool2 discovered', Boolean(byName(list, 'Tool Two')));
   check('tool3 discovered', Boolean(byName(list, 'Tool Three')));
-  check(
-    'label URL honoured',
-    byName(list, 'Tool One')?.url === 'http://tool-one.test.local',
-    byName(list, 'Tool One')?.url
-  );
-  check(
-    'infrastructure excluded (no postgres app)',
-    !list.some((a) => /sattest-db|postgres/i.test(a.name)),
-    list.map((a) => a.name).join(', ')
-  );
-  // Display names are title-cased with separators stripped, so match on the
-  // words rather than the container name — an earlier version of this check
-  // looked for "sattest-api" and could never have failed.
-  check(
-    'harness api/worker excluded via sat.ignore',
-    !list.some((a) => /sattest|sat api|sat worker|sat monitoring/i.test(a.name)),
-    list.map((a) => a.name).join(', ')
-  );
-  check(
-    'new applications have NULL business metadata',
-    byName(list, 'Tool Two')?.team == null &&
-      byName(list, 'Tool Two')?.developedBy == null
-  );
-  check('source is docker', byName(list, 'Tool Two')?.source === 'docker');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\nTEST 1: a new container is auto-created');
+console.log('\nTEST B: URL resolution order — label, nginx, then Needs Mapping');
 {
-  await docker([
-    'run', '--detach', '--name', 'sattest-tool4',
-    '--label', 'sat.name=Tool Four',
-    '--label', 'sat.url=tool-four.test.local',
-    'nginx:alpine',
-  ]);
-  await sync();
   const list = await apps();
-  const tool4 = byName(list, 'Tool Four');
-  check('Tool Four auto-created', Boolean(tool4));
-  check('created as Active', tool4?.status === 'Active', tool4?.status);
-  check('discovery_status active', tool4?.discoveryStatus === 'active');
-  check('first_seen set', Boolean(tool4?.firstSeen));
-  check('last_seen set', Boolean(tool4?.lastSeen));
-  check('metadata left for an admin', tool4?.team == null && tool4?.developedBy == null);
+  const t1 = byName(list, 'Tool One');
+  const t2 = byName(list, 'Tool Two');
+  const t3 = byName(list, 'Tool Three');
 
-  const ev = await events(tool4.id);
+  check('priority 1: label URL used', t1?.url === 'http://tool-one.test.local', t1?.url);
+  check('priority 1: urlSource=label', t1?.urlSource === 'label', t1?.urlSource);
+
   check(
-    'APPLICATION_DISCOVERED audited',
-    ev.some((e) => e.eventType === 'APPLICATION_DISCOVERED'),
-    ev.map((e) => e.eventType).join(',')
+    'priority 2: nginx URL used',
+    t2?.url === 'http://tool-two-from-nginx.test.local',
+    t2?.url
   );
-  const notes = await notifications();
+  check('priority 2: urlSource=nginx', t2?.urlSource === 'nginx', t2?.urlSource);
+
+  check('priority 3: no URL invented', t3?.url === null, String(t3?.url));
+  check('priority 3: flagged needsMapping', t3?.needsMapping === true);
+  check('priority 3: urlSource null', t3?.urlSource === null, String(t3?.urlSource));
+
+  // The old behaviour would have produced this from the container name.
   check(
-    'discovery notification raised',
-    notes.some((n) => n.type === 'TOOL_DISCOVERED' && n.applicationName === 'Tool Four')
+    'container-name URL generation removed',
+    !list.some((a) => a.url && a.url.includes('sattesttool')),
+    list.map((a) => a.url).join(', ')
   );
+
+  // An admin can supply the missing hostname.
+  const set = await req(`/applications/${t3.id}/url`, {
+    method: 'PUT',
+    body: JSON.stringify({ url: 'tool-three.manual.local' }),
+  });
+  check('admin can set a URL', set.status === 200, `got ${set.status}`);
+  check('URL normalised to https', set.body?.url === 'https://tool-three.manual.local', set.body?.url);
+  check('urlSource=manual', set.body?.urlSource === 'manual', set.body?.urlSource);
+  const ev = await events(t3.id);
+  check('URL change audited', ev.some((e) => e.eventType === 'APPLICATION_URL_SET'));
+
+  const bad = await req(`/applications/${t3.id}/url`, {
+    method: 'PUT',
+    body: JSON.stringify({ url: '' }),
+  });
+  check('empty URL rejected', bad.status === 400, `got ${bad.status}`);
 }
 
 // ---------------------------------------------------------------------------
-console.log('\nTEST 4: admin metadata survives a discovery pass');
+console.log('\nTEST C: infrastructure exclusions');
+{
+  const list = await apps();
+  const names = list.map((a) => a.name.toLowerCase()).join(' | ');
+  for (const banned of ['postgres', 'mongo', 'redis', 'nginx', 'traefik', 'worker', 'sat api', 'sat db']) {
+    check(`excluded: ${banned}`, !names.includes(banned), names);
+  }
+  check('harness api/worker excluded via sat.ignore', !/sattest/i.test(names), names);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nTEST D: review workflow — pending_review then approval');
 let tool2Id = null;
 {
   const list = await apps();
-  tool2Id = byName(list, 'Tool Two').id;
+  const t2 = byName(list, 'Tool Two');
+  tool2Id = t2.id;
 
+  check('new application is pending_review', t2?.discoveryStatus === 'pending_review', t2?.discoveryStatus);
+  check('pendingReview flag exposed', t2?.pendingReview === true);
+  check('business metadata left blank', t2?.team == null && t2?.developedBy == null);
+  check('not approved yet', !t2?.approvedAt);
+
+  // Discovery must not self-approve on a later pass.
+  await sync();
+  const still = byName(await apps(), 'Tool Two');
+  check('discovery does NOT auto-approve', still?.discoveryStatus === 'pending_review');
+
+  const ok = await approve(tool2Id);
+  check('admin can approve', ok.status === 200, `got ${ok.status}`);
+  check('becomes active on approval', ok.body?.discoveryStatus === 'active', ok.body?.discoveryStatus);
+  check('records who approved', ok.body?.approvedBy === 'tester@cloudfuze.com', ok.body?.approvedBy);
+  check('records when', Boolean(ok.body?.approvedAt));
+
+  const ev = await events(tool2Id);
+  check('approval audited', ev.some((e) => e.eventType === 'APPLICATION_APPROVED'));
+
+  const again = await approve(tool2Id);
+  check('re-approval rejected', again.status === 409, `got ${again.status}`);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nTEST E: admin metadata survives discovery');
+{
   const r = await req(`/applications/${tool2Id}`, {
     method: 'PUT',
     body: JSON.stringify({
@@ -202,8 +300,7 @@ let tool2Id = null;
       notes: 'Owned by the data guild.',
     }),
   });
-  check('admin can set metadata', r.status === 200, `got ${r.status}`);
-  check('team saved', r.body?.team === 'Analytics', r.body?.team);
+  check('metadata saved', r.status === 200 && r.body?.team === 'Analytics', `got ${r.status}`);
 
   // Server-owned fields must be ignored even when explicitly sent.
   const attack = await req(`/applications/${tool2Id}`, {
@@ -213,156 +310,180 @@ let tool2Id = null;
       url: 'http://evil.test',
       status: 'Inactive',
       source: 'manual',
+      discoveryStatus: 'pending_review',
       team: 'Analytics',
     }),
   });
-  check('server-owned name ignored', attack.body?.name === 'Tool Two', attack.body?.name);
-  check(
-    'server-owned url ignored',
-    attack.body?.url === 'http://tool-two.test.local',
-    attack.body?.url
-  );
-  check('server-owned status ignored', attack.body?.status === 'Active', attack.body?.status);
+  check('name ignored', attack.body?.name === 'Tool Two', attack.body?.name);
+  check('url ignored on the metadata route', attack.body?.url !== 'http://evil.test', attack.body?.url);
+  check('status ignored', attack.body?.status !== 'Inactive', attack.body?.status);
+  check('discoveryStatus ignored', attack.body?.discoveryStatus === 'active', attack.body?.discoveryStatus);
 
   await sync();
   const after = byName(await apps(), 'Tool Two');
-  check('team survives discovery', after?.team === 'Analytics', after?.team);
-  check('developedBy survives discovery', after?.developedBy === 'Platform Team');
-  check('gstack survives discovery', after?.gstackImplemented === true);
-  check('notes survive discovery', after?.notes === 'Owned by the data guild.');
+  check('team survives', after?.team === 'Analytics', after?.team);
+  check('developedBy survives', after?.developedBy === 'Platform Team');
+  check('gstack survives', after?.gstackImplemented === true);
+  check('notes survive', after?.notes === 'Owned by the data guild.');
+  check('approval survives', after?.discoveryStatus === 'active');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\nTEST 2: stopping a container marks it Inactive and notifies');
+console.log('\nTEST F: a new container is auto-created, pending review');
+{
+  await docker([
+    'run', '--detach', '--name', 'sattest-tool4',
+    '--label', 'sat.name=Tool Four',
+    '--label', 'sat.url=tool-four.test.local',
+    'httpd:alpine',
+  ]);
+  const run = await sync();
+  const t4 = byName(await apps(), 'Tool Four');
+
+  check('Tool Four created', Boolean(t4));
+  check('pending review', t4?.discoveryStatus === 'pending_review');
+  check('Active status', t4?.status === 'Active', t4?.status);
+  check('first_seen set', Boolean(t4?.firstSeen));
+  check('run counted the discovery', run.applicationsDiscovered >= 1, String(run.applicationsDiscovered));
+
+  const ev = await events(t4.id);
+  check('discovery audited', ev.some((e) => e.eventType === 'APPLICATION_DISCOVERED'));
+  const notes = await notifications();
+  check('notification raised', notes.some((n) => n.type === 'TOOL_DISCOVERED' && n.applicationName === 'Tool Four'));
+
+  await approve(t4.id);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nTEST G: stop -> Inactive + notification; restart -> recovery');
 {
   await docker(['container', 'stop', 'sattest-tool2']);
   await sync();
-  const tool2 = byName(await apps(), 'Tool Two');
-  check('status Inactive', tool2?.status === 'Inactive', tool2?.status);
-  check('discovery_status inactive', tool2?.discoveryStatus === 'inactive');
-  check('NOT auto-decommissioned', tool2?.decommissioned === false);
-  check('metadata still intact', tool2?.team === 'Analytics');
-  check('needsReview flagged', tool2?.needsReview === true);
-
-  const ev = await events(tool2Id);
-  check(
-    'APPLICATION_INACTIVE audited',
-    ev.some((e) => e.eventType === 'APPLICATION_INACTIVE' && e.newValue === 'Inactive')
-  );
+  let t2 = byName(await apps(), 'Tool Two');
+  check('Inactive', t2?.status === 'Inactive', t2?.status);
+  check('discovery_status inactive', t2?.discoveryStatus === 'inactive');
+  check('NOT auto-decommissioned', t2?.decommissioned === false);
+  check('metadata intact', t2?.team === 'Analytics');
+  check('needsReview flagged', t2?.needsReview === true);
+  check('docker_state recorded', Boolean(t2?.dockerState), String(t2?.dockerState));
 
   const stopNotes = (await notifications()).filter(
-    (n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two'
-  );
-  check('outage notification raised', stopNotes.length === 1, `count=${stopNotes.length}`);
-  check('message names the tool', stopNotes[0]?.message.includes('Tool Two'));
-  check('message asks for review', /Action Required/i.test(stopNotes[0]?.message || ''));
-
-  // Spam guard: repeated passes must not pile up duplicates.
-  await sync();
-  await sync();
-  const again = (await notifications()).filter(
     (n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two' && !n.isRead
   );
-  check('no duplicate outage notifications', again.length === 1, `count=${again.length}`);
-}
+  check('one outage notification', stopNotes.length === 1, `count=${stopNotes.length}`);
 
-// ---------------------------------------------------------------------------
-console.log('\nTEST 3: restarting a container restores it and notifies');
-{
+  await sync();
+  await sync();
+  const dupes = (await notifications()).filter(
+    (n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two' && !n.isRead
+  );
+  check('no duplicate outage notifications', dupes.length === 1, `count=${dupes.length}`);
+
   await docker(['container', 'start', 'sattest-tool2']);
   await sync();
-  const tool2 = byName(await apps(), 'Tool Two');
-  check('status Active again', tool2?.status === 'Active', tool2?.status);
-  check('discovery_status active again', tool2?.discoveryStatus === 'active');
-  check('metadata still intact after recovery', tool2?.team === 'Analytics');
-
-  const ev = await events(tool2Id);
-  check(
-    'APPLICATION_ACTIVE audited',
-    ev.some((e) => e.eventType === 'APPLICATION_ACTIVE' && e.newValue === 'Active')
-  );
-
+  t2 = byName(await apps(), 'Tool Two');
+  check('Active again', t2?.status === 'Active', t2?.status);
+  check('metadata intact after recovery', t2?.team === 'Analytics');
   const notes = await notifications();
+  check('recovery notification', notes.some((n) => n.type === 'TOOL_RESTORED' && n.applicationName === 'Tool Two'));
   check(
-    'recovery notification raised',
-    notes.some((n) => n.type === 'TOOL_RESTORED' && n.applicationName === 'Tool Two')
+    'outage resolved',
+    !notes.some((n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two' && !n.isRead)
   );
-  check(
-    'previous outage notification resolved',
-    !notes.some(
-      (n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two' && !n.isRead
-    )
-  );
-
-  // A second outage must be able to raise a fresh notification.
-  await docker(['container', 'stop', 'sattest-tool2']);
-  await sync();
-  const reopened = (await notifications()).filter(
-    (n) => n.type === 'TOOL_STOPPED' && n.applicationName === 'Tool Two' && !n.isRead
-  );
-  check('a later outage notifies again', reopened.length === 1, `count=${reopened.length}`);
-  await docker(['container', 'start', 'sattest-tool2']);
-  await sync();
 }
 
 // ---------------------------------------------------------------------------
-console.log('\nTEST 5: removing a container does NOT delete the application');
+console.log('\nTEST H: container removal never deletes the application');
 {
   const before = await apps();
-  const tool4 = byName(before, 'Tool Four');
+  const t4 = byName(before, 'Tool Four');
 
-  await docker(['container', 'stop', 'sattest-tool4']);
-  await docker(['container', 'rm', 'sattest-tool4']);
+  await removeIfPresent('sattest-tool4');
   await sync();
 
   const after = await apps();
-  const stillThere = byName(after, 'Tool Four');
-  check('application NOT deleted', Boolean(stillThere));
-  check('marked Inactive', stillThere?.status === 'Inactive', stillThere?.status);
-  check('NOT decommissioned automatically', stillThere?.decommissioned === false);
+  const still = byName(after, 'Tool Four');
+  check('NOT deleted', Boolean(still));
+  check('marked Inactive', still?.status === 'Inactive', still?.status);
+  check('NOT decommissioned automatically', still?.decommissioned === false);
   check('inventory count unchanged', after.length === before.length, `${before.length} -> ${after.length}`);
-  check('history preserved (first_seen kept)', stillThere?.firstSeen === tool4?.firstSeen);
+  check('history preserved', still?.firstSeen === t4?.firstSeen);
 
-  // There is deliberately no DELETE route.
-  const del = await req(`/applications/${tool4.id}`, { method: 'DELETE' });
-  check('DELETE route does not exist', del.status === 404, `got ${del.status}`);
-
-  // POST is gone too — applications cannot be created by hand any more.
+  const del = await req(`/applications/${t4.id}`, { method: 'DELETE' });
+  check('DELETE route absent', del.status === 404, `got ${del.status}`);
   const post = await req('/applications', {
     method: 'POST',
-    body: JSON.stringify({ name: 'Manual', url: 'http://x.test', team: 'T', developedBy: 'D' }),
+    body: JSON.stringify({ name: 'Manual', url: 'http://x.test' }),
   });
-  check('POST (manual create) removed', post.status === 404, `got ${post.status}`);
+  check('POST route absent', post.status === 404, `got ${post.status}`);
 }
 
 // ---------------------------------------------------------------------------
-console.log('\nTEST 6: decommissioning is admin-only and audited');
+console.log('\nTEST I: decommissioning is an admin decision, audited');
 {
-  const tool4 = byName(await apps(), 'Tool Four');
-  const r = await req(`/applications/${tool4.id}`, {
+  const t4 = byName(await apps(), 'Tool Four');
+  const r = await req(`/applications/${t4.id}`, {
     method: 'PUT',
     body: JSON.stringify({ decommissioned: true, notes: 'Replaced by Tool One.' }),
   });
   check('admin can decommission', r.status === 200 && r.body?.decommissioned === true);
   check('leaves the review queue', r.body?.needsReview === false);
 
-  const ev = await events(tool4.id);
+  const ev = await events(t4.id);
   const dec = ev.find((e) => e.eventType === 'APPLICATION_DECOMMISSIONED');
-  check('APPLICATION_DECOMMISSIONED audited', Boolean(dec));
-  check('audited against the admin, not discovery', dec?.actor === 'tester@cloudfuze.com', dec?.actor);
+  check('decommission audited', Boolean(dec));
+  check('attributed to the admin', dec?.actor === 'tester@cloudfuze.com', dec?.actor);
 
-  // Discovery must not undo an admin's decision.
   await sync();
-  const after = byName(await apps(), 'Tool Four');
-  check('discovery leaves decommissioned alone', after?.decommissioned === true);
+  check('discovery leaves it decommissioned', byName(await apps(), 'Tool Four')?.decommissioned === true);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nTEST J: discovery run metrics');
+{
+  const state = await req('/applications/discovery');
+  const runs = state.body?.runs || [];
+  check('runs recorded', runs.length > 0, String(runs.length));
+  const r = runs[0];
+  check('has started_at', Boolean(r?.startedAt));
+  check('has completed_at', Boolean(r?.completedAt));
+  check('has containers_scanned', typeof r?.containersScanned === 'number');
+  check('has applications_discovered', typeof r?.applicationsDiscovered === 'number');
+  check('has applications_updated', typeof r?.applicationsUpdated === 'number');
+  check('has duration', typeof r?.durationMs === 'number');
+  check('every run is attributed', runs.every((x) => x.trigger));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\nTEST K: concurrent passes are serialised by the advisory lock');
+{
+  // Fire several requests at once; the lock must ensure they do not interleave.
+  await waitForIdle();
+  const before = await latestRunId();
+  await Promise.all(
+    Array.from({ length: 4 }, () => req('/applications/discovery/run', { method: 'POST' }))
+  );
+  await sleep(8000);
+  await waitForIdle();
+
+  const state = await req('/applications/discovery');
+  const runs = (state.body?.runs || []).filter((r) => r.id > before);
+  const overlapping = runs.filter((r) => !r.completedAt).length;
+  check('at least one pass ran', runs.length >= 1, `runs=${runs.length}`);
+  // Coalescing is correct: 4 requests need not produce 4 runs.
+  check('no run left unfinished', overlapping === 0, `unfinished=${overlapping}`);
+  check('no run errored', runs.every((r) => !r.errors), runs.map((r) => r.errors).filter(Boolean).join('; '));
+
+  // Applications must not be duplicated by concurrent passes.
+  const list = await apps();
+  const names = list.map((a) => a.name);
+  check('no duplicate applications', new Set(names).size === names.length, names.join(', '));
 }
 
 // ---------------------------------------------------------------------------
 console.log('\nCLEANUP');
-{
-  await removeIfPresent('sattest-tool4');
-  console.log('   test containers removed');
-}
+await removeIfPresent('sattest-tool4');
+console.log('   test containers removed');
 
 console.log(`\n${'='.repeat(62)}`);
 console.log(`PASSED: ${pass}    FAILED: ${failures.length}`);

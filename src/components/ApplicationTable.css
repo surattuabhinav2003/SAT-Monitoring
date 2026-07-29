@@ -172,6 +172,61 @@
   color: var(--text-secondary);
 }
 
+/* Unhealthy container: degraded, not down. */
+.badge--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Discovered but not yet confirmed by an admin. */
+.badge--pending {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* No sat.url label and no nginx route — a human must supply the hostname. */
+.badge--mapping {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.row--pending {
+  background: rgba(1, 41, 172, 0.03);
+}
+
+/* Where the URL came from: label / nginx / manual. */
+.url-source {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
+  font-size: 9.5px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* Raw Docker HEALTHCHECK state alongside the mapped status. */
+.health-note {
+  margin-left: 7px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.row-action--approve {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.row-action--approve:hover {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success);
+}
+
 /* Gstack implementation — brand blue for done, neutral grey for outstanding. */
 .badge--gstack {
   background: var(--accent-soft);

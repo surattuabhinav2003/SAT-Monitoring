@@ -22,15 +22,37 @@ export function prettyUrl(value) {
 }
 
 /**
- * Effective lifecycle state of an application, collapsing the two flags that
+ * Effective lifecycle state of an application, collapsing the flags that
  * discovery and admins each own into the single label a reader cares about.
  *
- * Decommissioned wins: once an admin has made that call it is the answer,
- * regardless of whether a container happens to be running.
+ * Order matters:
+ *  - Decommissioned wins: once an admin has made that call it is the answer,
+ *    regardless of whether a container happens to be running.
+ *  - Pending Review comes next: the record exists but nobody has confirmed it
+ *    belongs in the inventory, so its liveness is not yet meaningful.
+ *  - Otherwise the discovered status stands (Active / Warning / Inactive).
  */
 export function lifecycleOf(app) {
   if (app?.decommissioned) return 'Decommissioned';
+  if (app?.discoveryStatus === 'pending_review') return 'Pending Review';
+  if (app?.status === 'Warning') return 'Warning';
   return app?.status === 'Active' ? 'Active' : 'Inactive';
+}
+
+/** Badge class for a lifecycle label. */
+export function badgeClassFor(state) {
+  switch (state) {
+    case 'Active':
+      return 'badge--active';
+    case 'Warning':
+      return 'badge--warning';
+    case 'Decommissioned':
+      return 'badge--decomm';
+    case 'Pending Review':
+      return 'badge--pending';
+    default:
+      return 'badge--inactive';
+  }
 }
 
 // Format an ISO timestamp as a short, readable date (e.g. "28 Jul 2026").

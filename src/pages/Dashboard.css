@@ -56,6 +56,18 @@
   color: var(--text-primary);
 }
 
+/* Latest discovery run, under the calls to action. */
+.dash-run {
+  margin: -8px 0 24px;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+}
+
+.dash-run-bad {
+  font-weight: var(--fw-semibold);
+  color: var(--danger);
+}
+
 /* Requiring-review call to action. */
 .dash-review {
   display: flex;
@@ -76,6 +88,24 @@
 .dash-review:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+}
+
+/* Informational variant (awaiting approval) — brand blue rather than amber,
+   because a new discovery is routine, not a problem. */
+.dash-review--info {
+  border-left-color: var(--accent);
+}
+
+.dash-review--info .dash-review-count {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dash-review code {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-size: 0.78rem;
 }
 
 .dash-review-count {

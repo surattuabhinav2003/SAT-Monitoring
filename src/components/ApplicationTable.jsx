@@ -1,5 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { compareValues, prettyUrl, lifecycleOf } from '../utils/helpers.js';
+import {
+  compareValues,
+  prettyUrl,
+  lifecycleOf,
+  badgeClassFor,
+} from '../utils/helpers.js';
 import './ApplicationTable.css';
 
 const PAGE_SIZE = 8;
@@ -18,12 +23,15 @@ const COLUMNS = [
  * Data table with search, filters and pagination.
  *
  * Applications are discovered, so there is no delete action — inventory history
- * is permanent. Admins get an edit action for business metadata only.
+ * is permanent. Admins get edit, plus approve for pending records and a URL
+ * prompt for ones discovery could not map.
  */
 export default function ApplicationTable({
   applications,
   isAdmin,
   onEdit,
+  onApprove,
+  onSetUrl,
   initialFilter = 'all',
   onFilterChange,
 }) {
@@ -32,7 +40,6 @@ export default function ApplicationTable({
   const [gstackFilter, setGstackFilter] = useState('all');
   const [page, setPage] = useState(1);
 
-  // Keep in step when a dashboard card deep-links with a different filter.
   useEffect(() => {
     setLifecycleFilter(initialFilter);
     setPage(1);
@@ -43,14 +50,18 @@ export default function ApplicationTable({
 
     if (lifecycleFilter !== 'all') {
       rows = rows.filter((r) => {
-        const state = lifecycleOf(r);
-        if (lifecycleFilter === 'review') {
-          // Needs a human decision: discovery says it is down, but nobody has
-          // decommissioned it.
-          return state === 'Inactive';
+        switch (lifecycleFilter) {
+          case 'pending':
+            return r.pendingReview;
+          case 'review':
+            return r.needsReview;
+          case 'mapping':
+            return r.needsMapping;
+          case 'incomplete':
+            return !r.team || !r.developedBy;
+          default:
+            return lifecycleOf(r).toLowerCase() === lifecycleFilter;
         }
-        if (lifecycleFilter === 'incomplete') return !r.team || !r.developedBy;
-        return state.toLowerCase() === lifecycleFilter;
       });
     }
     if (gstackFilter !== 'all') {
@@ -73,10 +84,7 @@ export default function ApplicationTable({
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pageRows = filtered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   function resetToFirstPage(setter) {
     return (value) => {
@@ -111,8 +119,11 @@ export default function ApplicationTable({
             aria-label="Filter by lifecycle state"
           >
             <option value="all">All Applications</option>
+            <option value="pending">Pending Review</option>
             <option value="active">Active</option>
+            <option value="warning">Warning</option>
             <option value="review">Requiring Review</option>
+            <option value="mapping">Needs Mapping</option>
             <option value="decommissioned">Decommissioned</option>
             <option value="incomplete">Missing Details</option>
           </select>
@@ -147,7 +158,7 @@ export default function ApplicationTable({
                   className="empty-row"
                 >
                   {applications.length === 0
-                    ? 'No applications discovered yet. Discovery runs every 5 minutes; use “Run Discovery” to scan now.'
+                    ? 'No applications discovered yet. The worker scans Docker every 5 minutes.'
                     : 'No applications match your filters.'}
                 </td>
               </tr>
@@ -155,32 +166,46 @@ export default function ApplicationTable({
               pageRows.map((app) => {
                 const state = lifecycleOf(app);
                 return (
-                  <tr key={app.id}>
+                  <tr key={app.id} className={app.pendingReview ? 'row--pending' : ''}>
                     <td className="cell-name">
                       {app.name}
-                      {(!app.team || !app.developedBy) && (
-                        <span
-                          className="needs-detail"
-                          title="Team Using / Developed By not set"
-                        >
+                      {(!app.team || !app.developedBy) && !app.pendingReview && (
+                        <span className="needs-detail" title="Team Using / Developed By not set">
                           Details needed
                         </span>
                       )}
                     </td>
                     <td>
-                      <a
-                        href={app.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="url-link"
-                      >
-                        {prettyUrl(app.url)}
-                      </a>
+                      {app.url ? (
+                        <a
+                          href={app.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="url-link"
+                        >
+                          {prettyUrl(app.url)}
+                          {app.urlSource && (
+                            <span className="url-source" title={`Resolved from ${app.urlSource}`}>
+                              {app.urlSource}
+                            </span>
+                          )}
+                        </a>
+                      ) : (
+                        <span className="badge badge--mapping" title="No sat.url label and no nginx route found">
+                          Needs Mapping
+                        </span>
+                      )}
                     </td>
                     <td>{app.team || <span className="cell-empty">—</span>}</td>
                     <td>{app.developedBy || <span className="cell-empty">—</span>}</td>
                     <td>
                       <span className={`badge ${badgeClassFor(state)}`}>{state}</span>
+                      {/* Raw Docker health, kept visible for diagnosis. */}
+                      {app.healthStatus && app.healthStatus !== 'none' && (
+                        <span className="health-note" title="Docker HEALTHCHECK state">
+                          {app.healthStatus}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <span
@@ -194,6 +219,26 @@ export default function ApplicationTable({
                     <td className="cell-seen">{relativeSeen(app.lastSeen)}</td>
                     {isAdmin && (
                       <td className="col-actions">
+                        {app.pendingReview && (
+                          <button
+                            className="row-action row-action--approve"
+                            onClick={() => onApprove(app)}
+                            title="Approve this application"
+                            aria-label={`Approve ${app.name}`}
+                          >
+                            <CheckIcon />
+                          </button>
+                        )}
+                        {app.needsMapping && (
+                          <button
+                            className="row-action"
+                            onClick={() => onSetUrl(app)}
+                            title="Set the URL"
+                            aria-label={`Set URL for ${app.name}`}
+                          >
+                            <LinkIcon />
+                          </button>
+                        )}
                         <button
                           className="row-action"
                           onClick={() => onEdit(app)}
@@ -246,13 +291,7 @@ export default function ApplicationTable({
   );
 }
 
-function badgeClassFor(state) {
-  if (state === 'Active') return 'badge--active';
-  if (state === 'Decommissioned') return 'badge--decomm';
-  return 'badge--inactive';
-}
-
-/** "4 minutes ago" — more useful than a timestamp for a liveness column. */
+/** "4 mins ago" — more useful than a timestamp for a liveness column. */
 function relativeSeen(value) {
   if (!value) return <span className="cell-empty">never</span>;
   const d = new Date(value);
@@ -281,6 +320,21 @@ function EditIcon() {
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </svg>
+  );
+}
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.8" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.8-1.8" />
     </svg>
   );
 }

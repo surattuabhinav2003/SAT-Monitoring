@@ -38,11 +38,20 @@ export function useApplications() {
     return updated;
   }, []);
 
+  /**
+   * Swap in a record the caller already updated (approve, set-URL), so the row
+   * refreshes without refetching the whole list.
+   */
+  const replaceApplication = useCallback((updated) => {
+    setApplications((prev) => prev.map((app) => (app.id === updated.id ? updated : app)));
+  }, []);
+
   return {
     applications,
     loading,
     error,
     reload: load,
     editApplication,
+    replaceApplication,
   };
 }

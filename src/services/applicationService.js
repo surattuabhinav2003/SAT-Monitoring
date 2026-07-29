@@ -49,12 +49,32 @@ export async function getApplicationEvents(id) {
   return data;
 }
 
+/** Approve a newly discovered application out of pending_review. */
+export async function approveApplication(id) {
+  const { data } = await api.post(`/applications/${id}/approve`);
+  return normalize(data);
+}
+
+/**
+ * Supply the hostname for an application discovery could not map.
+ * Separate from metadata because `url` is normally server-owned.
+ */
+export async function setApplicationUrl(id, url) {
+  const { data } = await api.put(`/applications/${id}/url`, { url });
+  return normalize(data);
+}
+
 export async function getDiscoveryState() {
   const { data } = await api.get('/applications/discovery');
   return data;
 }
 
-/** Trigger a discovery pass immediately (admin). */
+/**
+ * Request a discovery pass (designated operators only).
+ *
+ * The API has no Docker access, so this only ASKS the worker to scan and returns
+ * 202 immediately. Poll getDiscoveryState() for the result.
+ */
 export async function runDiscovery() {
   const { data } = await api.post('/applications/discovery/run');
   return data;

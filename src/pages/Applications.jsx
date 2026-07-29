@@ -1,39 +1,54 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ApplicationTable from '../components/ApplicationTable.jsx';
 import ApplicationFormModal from '../components/ApplicationFormModal.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import Modal from '../components/Modal.jsx';
 import { useApplications } from '../hooks/useApplications.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { runDiscovery, getDiscoveryState } from '../services/applicationService.js';
+import {
+  runDiscovery,
+  getDiscoveryState,
+  approveApplication,
+  setApplicationUrl,
+} from '../services/applicationService.js';
 import './Applications.css';
 
 /**
  * Applications page.
  *
  * The inventory is discovered from Docker — there is no create and no delete.
- * Admins edit business metadata, and can trigger a discovery pass on demand
- * rather than waiting for the 5-minute schedule.
+ * Admins approve new records, supply URLs discovery could not map, and maintain
+ * business metadata.
  */
 export default function Applications() {
   const { isAdmin, canRunDiscovery } = useAuth();
   const toast = useToast();
-  const { applications, loading, error, reload, editApplication } = useApplications();
+  const { applications, loading, error, reload, editApplication, replaceApplication } =
+    useApplications();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(null);
-  const [syncing, setSyncing] = useState(false);
+  const [mapping, setMapping] = useState(null);
+  const [mappingUrl, setMappingUrl] = useState('');
+  const [savingUrl, setSavingUrl] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [discovery, setDiscovery] = useState(null);
 
-  // A dashboard card can deep-link here with ?filter=review
   const initialFilter = searchParams.get('filter') || 'all';
 
-  useEffect(() => {
-    getDiscoveryState()
-      .then(setDiscovery)
-      .catch(() => setDiscovery(null));
+  const loadDiscovery = useCallback(async () => {
+    try {
+      setDiscovery(await getDiscoveryState());
+    } catch {
+      setDiscovery(null);
+    }
   }, []);
+
+  useEffect(() => {
+    loadDiscovery();
+  }, [loadDiscovery]);
 
   async function handleSave(payload) {
     try {
@@ -45,21 +60,54 @@ export default function Applications() {
     }
   }
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleApprove(app) {
     try {
-      const stats = await runDiscovery();
-      toast.success(
-        `Discovery complete — ${stats.created} new, ${stats.activated} restored, ${stats.deactivated} stopped.`
-      );
-      await reload();
-      setDiscovery(await getDiscoveryState());
+      const updated = await approveApplication(app.id);
+      replaceApplication(updated);
+      toast.success(`${app.name} approved.`);
     } catch (err) {
-      toast.error(err.message || 'Discovery failed.');
-    } finally {
-      setSyncing(false);
+      toast.error(err.message || 'Could not approve the application.');
     }
   }
+
+  async function handleSaveUrl(e) {
+    e.preventDefault();
+    setSavingUrl(true);
+    try {
+      const updated = await setApplicationUrl(mapping.id, mappingUrl.trim());
+      replaceApplication(updated);
+      toast.success('URL saved.');
+      setMapping(null);
+      setMappingUrl('');
+    } catch (err) {
+      toast.error(err.message || 'Could not save the URL.');
+    } finally {
+      setSavingUrl(false);
+    }
+  }
+
+  /**
+   * The API has no Docker access, so this only asks the worker to scan. The
+   * result appears when the worker finishes, hence the delayed refresh rather
+   * than reading a return value.
+   */
+  async function handleRequestScan() {
+    setRequesting(true);
+    try {
+      await runDiscovery();
+      toast.success('Discovery requested — the worker is scanning.');
+      // Give the worker a moment, then pick up whatever it wrote.
+      setTimeout(async () => {
+        await Promise.all([reload(), loadDiscovery()]);
+        setRequesting(false);
+      }, 4000);
+    } catch (err) {
+      toast.error(err.message || 'Could not request discovery.');
+      setRequesting(false);
+    }
+  }
+
+  const latest = discovery?.latestRun;
 
   return (
     <div className="applications-page">
@@ -67,28 +115,39 @@ export default function Applications() {
         <div className="page-heading">
           <h1>Applications</h1>
           <p>
-            Discovered automatically from Docker. Admins maintain the business
-            details — team, owner, gstack and decommission status.
+            Discovered automatically from Docker. Admins approve new entries and
+            maintain the business details — team, owner, gstack and decommission
+            status.
           </p>
         </div>
 
-        {/* Hidden unless the caller is a designated discovery operator — the
-            API enforces the same rule, so this is presentation only. */}
         {canRunDiscovery && (
-          <button className="btn btn--ghost" onClick={handleSync} disabled={syncing}>
+          <button
+            className="btn btn--ghost"
+            onClick={handleRequestScan}
+            disabled={requesting}
+          >
             <RefreshIcon />
-            {syncing ? 'Scanning…' : 'Run Discovery'}
+            {requesting ? 'Scanning…' : 'Run Discovery'}
           </button>
         )}
       </div>
 
-      {discovery?.last && (
+      {latest && (
         <p className="discovery-meta">
-          Last scan {formatWhen(discovery.last.at)}
-          {discovery.last.ok
-            ? ` — ${discovery.last.seen} container group(s) seen`
-            : ` — failed: ${discovery.last.error}`}
-          {discovery.enabled ? ` · every 5 minutes` : ' · scheduler disabled'}
+          Last scan {formatWhen(latest.startedAt)}
+          {latest.errors ? (
+            <span className="discovery-error"> — failed: {latest.errors}</span>
+          ) : (
+            <>
+              {' '}
+              — {latest.containersScanned} container(s) scanned,{' '}
+              {latest.applicationsDiscovered} new, {latest.applicationsDeactivated} stopped
+              {latest.needsMapping > 0 && `, ${latest.needsMapping} needing mapping`}
+              {latest.durationMs != null && ` · ${latest.durationMs} ms`}
+            </>
+          )}
+          {discovery?.schedule && ` · schedule ${discovery.schedule}`}
         </p>
       )}
 
@@ -110,10 +169,14 @@ export default function Applications() {
             setSearchParams(next, { replace: true });
           }}
           onEdit={setEditing}
+          onApprove={handleApprove}
+          onSetUrl={(app) => {
+            setMapping(app);
+            setMappingUrl('');
+          }}
         />
       )}
 
-      {/* Edit metadata (admins only) */}
       {isAdmin && (
         <ApplicationFormModal
           open={Boolean(editing)}
@@ -122,6 +185,51 @@ export default function Applications() {
           onSave={handleSave}
         />
       )}
+
+      {/* Supply a hostname discovery could not determine. */}
+      <Modal
+        open={Boolean(mapping)}
+        title="Set Application URL"
+        onClose={() => setMapping(null)}
+        width={520}
+      >
+        <form className="app-form" onSubmit={handleSaveUrl} noValidate>
+          <p className="form-note">
+            Discovery found no <code>sat.url</code> label on{' '}
+            <strong>{mapping?.name}</strong> and no matching nginx route, so it did
+            not guess a hostname. Add one here, or add a <code>sat.url</code> label
+            to the container so it is picked up automatically next time.
+          </p>
+          <div className="form-field">
+            <label htmlFor="map-url">Hostname or URL</label>
+            <input
+              id="map-url"
+              type="text"
+              value={mappingUrl}
+              onChange={(e) => setMappingUrl(e.target.value)}
+              placeholder="tool.cftools.live"
+              autoFocus
+            />
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => setMapping(null)}
+              disabled={savingUrl}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={savingUrl || !mappingUrl.trim()}
+            >
+              {savingUrl ? 'Saving…' : 'Save URL'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -134,7 +242,12 @@ function formatWhen(value) {
   if (mins < 1) return 'just now';
   if (mins === 1) return '1 minute ago';
   if (mins < 60) return `${mins} minutes ago`;
-  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function RefreshIcon() {

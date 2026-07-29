@@ -2,26 +2,30 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { ApiError, asyncRoute } from '../errors.js';
 import { requireAuth, requireAdmin, requireDiscoveryOperator } from '../auth.js';
-import { runOnce, getDiscoveryState } from '../discovery/scheduler.js';
+import { requestRun, getDiscoveryState } from '../discovery/scheduler.js';
+import { getRecentRuns } from '../discovery/sync.js';
 
 const router = Router();
 
 /**
  * Applications are DISCOVERED, not created by hand: Docker discovery owns
- * identity and liveness, and admins own the business metadata.
+ * identity and liveness, admins own the business metadata.
  *
- * There is deliberately no POST route — see the discovery service. Admins edit
- * only the fields they own, and nothing here can delete an application:
- * inventory history is permanent.
+ * There is deliberately no POST (see the discovery service) and no DELETE
+ * (inventory history is permanent).
+ *
+ * This process has NO Docker access. A manual scan is REQUESTED from the worker
+ * over Postgres NOTIFY rather than executed here.
  */
 router.use(requireAuth);
 
-/** DB row (snake_case) -> API shape (camelCase) the SPA expects. */
 function toDto(row) {
+  const pending = row.discovery_status === 'pending_review';
   return {
     id: row.id,
     name: row.name,
     url: row.url,
+    urlSource: row.url_source,
     team: row.team,
     developedBy: row.developed_by,
     status: row.status,
@@ -30,26 +34,31 @@ function toDto(row) {
     notes: row.notes,
     source: row.source,
     discoveryStatus: row.discovery_status,
+    dockerState: row.docker_state,
+    healthStatus: row.health_status,
     firstSeen: row.first_seen,
     lastSeen: row.last_seen,
-    // True when discovery has stopped seeing it but no admin has decided yet.
-    needsReview: row.status === 'Inactive' && !row.decommissioned,
-    // Business metadata an admin still has to supply.
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    pendingReview: pending,
+    // No sat.url label and no nginx route — an admin must supply the hostname.
+    needsMapping: !row.url,
+    // Discovery says it is down and nobody has decided what that means.
+    needsReview: row.status === 'Inactive' && !row.decommissioned && !pending,
     metadataComplete: Boolean(row.team && row.developed_by),
   };
 }
 
 const SELECT = `
-  SELECT id, name, url, team, developed_by, status, decommissioned,
-         gstack_implemented, notes, source, discovery_status, first_seen, last_seen
+  SELECT id, name, url, url_source, team, developed_by, status, decommissioned,
+         gstack_implemented, notes, source, discovery_status, docker_state,
+         health_status, first_seen, last_seen, approved_at, approved_by
   FROM applications
 `;
 
 function readId(raw) {
   const id = Number(raw);
-  if (!Number.isInteger(id) || id < 1) {
-    throw new ApiError(400, 'Invalid application id.');
-  }
+  if (!Number.isInteger(id) || id < 1) throw new ApiError(400, 'Invalid application id.');
   return id;
 }
 
@@ -57,8 +66,11 @@ function readId(raw) {
  * Read the ADMIN-OWNED fields from a request body.
  *
  * Server-owned fields (name, url, status, source, first_seen, last_seen,
- * discovery_status) are intentionally ignored even if sent, so an admin cannot
- * overwrite what discovery owns.
+ * discovery_status, docker_state, health_status) are ignored even if sent, so an
+ * admin cannot overwrite what discovery owns.
+ *
+ * `url` is the one exception, handled separately below: an unmapped application
+ * needs a human to supply the hostname discovery could not determine.
  */
 function readAdminFields(body) {
   const out = {};
@@ -71,12 +83,8 @@ function readAdminFields(body) {
     const v = String(body.developedBy ?? '').trim().replace(/\s+/g, ' ');
     out.developedBy = v || null;
   }
-  if ('gstackImplemented' in body) {
-    out.gstackImplemented = Boolean(body.gstackImplemented);
-  }
-  if ('decommissioned' in body) {
-    out.decommissioned = Boolean(body.decommissioned);
-  }
+  if ('gstackImplemented' in body) out.gstackImplemented = Boolean(body.gstackImplemented);
+  if ('decommissioned' in body) out.decommissioned = Boolean(body.decommissioned);
   if ('notes' in body) {
     const v = String(body.notes ?? '').trim();
     out.notes = v || null;
@@ -113,34 +121,32 @@ router.get(
   })
 );
 
-// GET /api/applications/discovery — status of the discovery loop
+// GET /api/applications/discovery — scheduler state + recent runs
 router.get(
   '/discovery',
   asyncRoute(async (_req, res) => {
-    res.json(getDiscoveryState());
+    const runs = await getRecentRuns(10);
+    res.json({ ...getDiscoveryState(), latestRun: runs[0] || null, runs });
   })
 );
 
-// POST /api/applications/discovery/run — trigger a pass now.
-// Restricted to the designated operator (DISCOVERY_OPERATORS); the scheduled
-// pass is unaffected.
+/**
+ * POST /api/applications/discovery/run
+ *
+ * Requests a pass from the discovery worker. Returns 202: the work happens in
+ * another process, so there is nothing to report synchronously — poll
+ * GET /discovery for the outcome.
+ */
 router.post(
   '/discovery/run',
   requireDiscoveryOperator,
-  asyncRoute(async (_req, res) => {
-    let stats;
-    try {
-      stats = await runOnce('api');
-    } catch (err) {
-      // Surface the real reason — almost always an unreachable Docker socket —
-      // rather than a generic failure the operator cannot act on.
-      throw new ApiError(503, `Discovery failed: ${err.message}`);
-    }
-    // null means a pass was already in flight, which is a different situation.
-    if (!stats) {
-      throw new ApiError(409, 'A discovery pass is already running. Try again shortly.');
-    }
-    res.json(stats);
+  asyncRoute(async (req, res) => {
+    await requestRun(req.user.email);
+    res.status(202).json({
+      requested: true,
+      message:
+        'Discovery requested. The worker runs the scan; refresh in a few seconds to see the result.',
+    });
   })
 );
 
@@ -151,10 +157,8 @@ router.get(
     const id = readId(req.params.id);
     const { rows } = await query(
       `SELECT id, event_type, old_value, new_value, actor, created_at
-         FROM application_events
-        WHERE application_id = $1
-        ORDER BY created_at DESC, id DESC
-        LIMIT 200`,
+         FROM application_events WHERE application_id = $1
+        ORDER BY created_at DESC, id DESC LIMIT 200`,
       [id]
     );
     res.json(
@@ -171,9 +175,97 @@ router.get(
 );
 
 /**
- * PUT /api/applications/:id (admin)
+ * POST /api/applications/:id/approve (admin)
  *
- * Updates ADMIN-OWNED fields only. Server-owned fields in the body are ignored.
+ * Moves a newly discovered application out of pending_review. Discovery keeps it
+ * pending until a human confirms it belongs in the inventory, so an unexpected
+ * container never silently becomes a tracked application.
+ */
+router.post(
+  '/:id/approve',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const id = readId(req.params.id);
+
+    const { rows: before } = await query(
+      'SELECT discovery_status, status FROM applications WHERE id = $1',
+      [id]
+    );
+    if (before.length === 0) throw new ApiError(404, 'Application not found.');
+    if (before[0].discovery_status !== 'pending_review') {
+      throw new ApiError(409, 'This application has already been reviewed.');
+    }
+
+    const { rows } = await query(
+      `UPDATE applications
+          SET discovery_status = CASE WHEN status = 'Inactive' THEN 'inactive' ELSE 'active' END,
+              approved_at = now(), approved_by = $2, updated_at = now()
+        WHERE id = $1
+      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
+                gstack_implemented, notes, source, discovery_status, docker_state,
+                health_status, first_seen, last_seen, approved_at, approved_by`,
+      [id, req.user.email]
+    );
+
+    await query(
+      `INSERT INTO application_events
+         (application_id, event_type, old_value, new_value, actor)
+       VALUES ($1, 'APPLICATION_APPROVED', 'pending_review', $2, $3)`,
+      [id, rows[0].discovery_status, req.user.email]
+    );
+
+    res.json(toDto(rows[0]));
+  })
+);
+
+/**
+ * PUT /api/applications/:id/url (admin)
+ *
+ * Supply the hostname for an application discovery could not map. Kept separate
+ * from the metadata route because `url` is normally server-owned — this is the
+ * one deliberate hand-off, and it is audited.
+ */
+router.put(
+  '/:id/url',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const id = readId(req.params.id);
+    const raw = String(req.body?.url ?? '').trim();
+    if (!raw) throw new ApiError(400, 'A URL is required.');
+
+    const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      new URL(url);
+    } catch {
+      throw new ApiError(400, 'Enter a valid hostname or http(s) URL.');
+    }
+
+    const { rows: before } = await query('SELECT url FROM applications WHERE id = $1', [id]);
+    if (before.length === 0) throw new ApiError(404, 'Application not found.');
+
+    const { rows } = await query(
+      `UPDATE applications
+          SET url = $2, url_source = 'manual', updated_at = now()
+        WHERE id = $1
+      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
+                gstack_implemented, notes, source, discovery_status, docker_state,
+                health_status, first_seen, last_seen, approved_at, approved_by`,
+      [id, url]
+    );
+
+    await query(
+      `INSERT INTO application_events
+         (application_id, event_type, old_value, new_value, actor)
+       VALUES ($1, 'APPLICATION_URL_SET', $2, $3, $4)`,
+      [id, before[0].url, url, req.user.email]
+    );
+
+    res.json(toDto(rows[0]));
+  })
+);
+
+/**
+ * PUT /api/applications/:id (admin) — ADMIN-OWNED fields only.
  */
 router.put(
   '/:id',
@@ -182,10 +274,7 @@ router.put(
     const id = readId(req.params.id);
     const fields = readAdminFields(req.body || {});
 
-    const before = await query(
-      'SELECT decommissioned FROM applications WHERE id = $1',
-      [id]
-    );
+    const before = await query('SELECT decommissioned FROM applications WHERE id = $1', [id]);
     if (before.rows.length === 0) throw new ApiError(404, 'Application not found.');
 
     if ('team' in fields) fields.team = await canonicalise('team', fields.team);
@@ -212,27 +301,19 @@ router.put(
     const { rows } = await query(
       `UPDATE applications SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $${params.length}
-      RETURNING id, name, url, team, developed_by, status, decommissioned,
-                gstack_implemented, notes, source, discovery_status,
-                first_seen, last_seen`,
+      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
+                gstack_implemented, notes, source, discovery_status, docker_state,
+                health_status, first_seen, last_seen, approved_at, approved_by`,
       params
     );
 
     // Decommissioning is a business decision — audit who made it.
-    if (
-      'decommissioned' in fields &&
-      fields.decommissioned !== before.rows[0].decommissioned
-    ) {
+    if ('decommissioned' in fields && fields.decommissioned !== before.rows[0].decommissioned) {
       await query(
         `INSERT INTO application_events
            (application_id, event_type, old_value, new_value, actor)
          VALUES ($1, 'APPLICATION_DECOMMISSIONED', $2, $3, $4)`,
-        [
-          id,
-          String(before.rows[0].decommissioned),
-          String(fields.decommissioned),
-          req.user.email,
-        ]
+        [id, String(before.rows[0].decommissioned), String(fields.decommissioned), req.user.email]
       );
     }
 
