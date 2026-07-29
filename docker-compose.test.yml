@@ -36,6 +36,10 @@ services:
   api:
     build: ./backend
     container_name: sattest-api
+    # The harness must not inventory its own API/worker — done with the same
+    # documented label an operator would use, rather than a special case in code.
+    labels:
+      sat.ignore: 'true'
     depends_on:
       db:
         condition: service_healthy
@@ -68,6 +72,8 @@ services:
     build: ./backend
     container_name: sattest-worker
     command: ['node', 'src/discovery/worker.js']
+    labels:
+      sat.ignore: 'true'
     depends_on:
       db:
         condition: service_healthy

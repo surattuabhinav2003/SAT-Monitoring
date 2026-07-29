@@ -19,6 +19,7 @@ export async function fetchMyProfile() {
       email: data.email,
       name: data.name,
       role: data.role === 'Admin' ? 'Admin' : 'User',
+      canRunDiscovery: Boolean(data.canRunDiscovery),
     };
   } catch {
     return null;

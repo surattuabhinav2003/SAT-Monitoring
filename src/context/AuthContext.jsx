@@ -114,6 +114,7 @@ export function AuthProvider({ children }) {
               email: profile.email || account.username,
               id: account.localAccountId,
               role: profile.role,
+              canRunDiscovery: profile.canRunDiscovery,
             });
             setRole(profile.role);
           } else {
@@ -216,6 +217,9 @@ export function AuthProvider({ children }) {
     role,
     isAuthenticated: !!user,
     isAdmin: role === 'Admin',
+    // Per-action permission resolved server-side. In demo mode there is no
+    // backend profile, so the simulated Admin gets it.
+    canRunDiscovery: DEMO_MODE ? role === 'Admin' : Boolean(user?.canRunDiscovery),
     loading,
     login,
     logout,

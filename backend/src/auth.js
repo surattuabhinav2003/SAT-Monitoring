@@ -157,4 +157,57 @@ export const requireAdmin = asyncRoute(async (req, _res, next) => {
   next();
 });
 
+/**
+ * Who may trigger a discovery pass on demand.
+ *
+ * Comma-separated allow-list of email addresses. This restricts the MANUAL
+ * "Run Discovery" action only — the 5-minute scheduled pass is unaffected and
+ * keeps running regardless.
+ *
+ * Leaving it blank falls back to "any admin", so a missing value cannot lock
+ * everyone out of the button.
+ */
+const DISCOVERY_OPERATORS = (process.env.DISCOVERY_OPERATORS || '')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+export function listDiscoveryOperators() {
+  return [...DISCOVERY_OPERATORS];
+}
+
+/** Whether this address may trigger a discovery pass (must also be an admin). */
+export async function canRunDiscovery(email) {
+  const value = String(email || '').trim().toLowerCase();
+  if (!value) return false;
+  if (!(await isAdminEmail(value))) return false;
+  if (DISCOVERY_OPERATORS.length === 0) return true; // unrestricted fallback
+  return DISCOVERY_OPERATORS.includes(value);
+}
+
+/**
+ * Require admin AND membership of the discovery operator list.
+ *
+ * Admin is checked first so a non-admin gets the ordinary 403 rather than a
+ * message that reveals who the designated operators are.
+ */
+export const requireDiscoveryOperator = asyncRoute(async (req, _res, next) => {
+  if (!req.user) await authenticate(req);
+
+  if (!(await isAdminEmail(req.user.email))) {
+    throw new ApiError(403, 'Admin access is required for this action.');
+  }
+  if (
+    DISCOVERY_OPERATORS.length > 0 &&
+    !DISCOVERY_OPERATORS.includes(req.user.email)
+  ) {
+    throw new ApiError(
+      403,
+      'Running discovery on demand is restricted to the designated operator. ' +
+        'Scheduled discovery continues to run automatically every 5 minutes.'
+    );
+  }
+  next();
+});
+
 export { isAdminEmail };

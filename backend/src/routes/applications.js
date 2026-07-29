@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db.js';
 import { ApiError, asyncRoute } from '../errors.js';
-import { requireAuth, requireAdmin } from '../auth.js';
+import { requireAuth, requireAdmin, requireDiscoveryOperator } from '../auth.js';
 import { runOnce, getDiscoveryState } from '../discovery/scheduler.js';
 
 const router = Router();
@@ -121,10 +121,12 @@ router.get(
   })
 );
 
-// POST /api/applications/discovery/run — trigger a pass now (admin)
+// POST /api/applications/discovery/run — trigger a pass now.
+// Restricted to the designated operator (DISCOVERY_OPERATORS); the scheduled
+// pass is unaffected.
 router.post(
   '/discovery/run',
-  requireAdmin,
+  requireDiscoveryOperator,
   asyncRoute(async (_req, res) => {
     let stats;
     try {

@@ -46,7 +46,13 @@ so a tool made of frontend + backend + db is a single entry. A `sat.url` or
 `sat.name` label opts a container out of grouping and makes it its own tool.
 
 **Exclusions:** databases, caches and reverse proxies are skipped by image, and
-the portal never inventories itself. `DISCOVERY_EXCLUDE` adds names or projects.
+the portal never inventories itself. `DISCOVERY_EXCLUDE` adds names or projects,
+and a `sat.ignore=true` label opts an individual container out.
+
+**Who can trigger a scan:** the scheduled pass always runs. The on-demand
+**Run Discovery** button is limited to the addresses in `DISCOVERY_OPERATORS`
+(each must also be an admin); blank means any admin. The button is hidden for
+everyone else and the API returns `403`, so it is enforced on both sides.
 
 **Field ownership — the rule discovery must never break:**
 
@@ -148,7 +154,7 @@ All routes are under `/api`. Errors return `{ "message": "..." }`.
 | PUT    | `/api/applications/:id`               | **admin** | Update **business metadata only**   |
 | GET    | `/api/applications/:id/events`         | signed in | Audit trail                         |
 | GET    | `/api/applications/discovery`          | signed in | Scheduler state + last result       |
-| POST   | `/api/applications/discovery/run`      | **admin** | Trigger a discovery pass now        |
+| POST   | `/api/applications/discovery/run`      | **operator** | Trigger a discovery pass now     |
 | GET    | `/api/notifications`                  | signed in | List (filter by `type`, `unread`)   |
 | GET    | `/api/notifications/unread-count`      | signed in | Badge count                         |
 | PUT    | `/api/notifications/:id/read`          | **admin** | Mark one read                       |

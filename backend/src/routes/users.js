@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncRoute } from '../errors.js';
-import { requireAuth, isAdminEmail } from '../auth.js';
+import { requireAuth, isAdminEmail, canRunDiscovery } from '../auth.js';
 
 const router = Router();
 
@@ -22,6 +22,9 @@ router.get(
       email: req.user.email,
       name: req.user.name,
       role: admin ? 'Admin' : 'User',
+      // Per-action permission, so the UI can hide controls the caller cannot
+      // use rather than letting them fail with a 403.
+      canRunDiscovery: await canRunDiscovery(req.user.email),
     });
   })
 );

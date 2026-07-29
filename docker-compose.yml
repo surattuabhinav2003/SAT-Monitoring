@@ -50,6 +50,8 @@ services:
       DISCOVERY_BASE_DOMAIN: ${DISCOVERY_BASE_DOMAIN:-cftools.live}
       DISCOVERY_URL_SCHEME: ${DISCOVERY_URL_SCHEME:-https}
       DISCOVERY_EXCLUDE: ${DISCOVERY_EXCLUDE:-}
+      # Restricts the on-demand "Run Discovery" trigger only; blank = any admin.
+      DISCOVERY_OPERATORS: ${DISCOVERY_OPERATORS:-}
     ports:
       - '4000:4000'
     volumes:

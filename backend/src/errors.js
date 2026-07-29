@@ -35,7 +35,12 @@ export function errorHandler(err, req, res, next) {
   }
 
   let message;
-  if (status >= 500) {
+  if (err instanceof ApiError) {
+    // ApiError messages are author-written and safe to expose, including at 5xx
+    // — e.g. "Discovery failed: connect ENOENT /var/run/docker.sock", which the
+    // operator needs in order to act. Only UNEXPECTED errors get masked.
+    message = err.message;
+  } else if (status >= 500) {
     message = 'An unexpected server error occurred.';
   } else if (err.type === 'entity.parse.failed') {
     message = 'Request body is not valid JSON.';

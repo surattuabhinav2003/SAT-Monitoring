@@ -102,6 +102,24 @@ console.log('\nWaiting for the test API…');
 }
 
 // ---------------------------------------------------------------------------
+// Remove anything a previous (possibly aborted) run left behind, so the suite is
+// repeatable without manual cleanup.
+async function removeIfPresent(name) {
+  try {
+    await docker(['container', 'stop', name]);
+  } catch {
+    /* not running */
+  }
+  try {
+    await docker(['container', 'rm', name]);
+  } catch {
+    /* not present */
+  }
+}
+
+console.log('SETUP: clearing leftovers from any previous run');
+await removeIfPresent('sattest-tool4');
+
 console.log('SETUP: initial discovery pass');
 {
   const stats = await sync();
@@ -120,9 +138,13 @@ console.log('SETUP: initial discovery pass');
     !list.some((a) => /sattest-db|postgres/i.test(a.name)),
     list.map((a) => a.name).join(', ')
   );
+  // Display names are title-cased with separators stripped, so match on the
+  // words rather than the container name — an earlier version of this check
+  // looked for "sattest-api" and could never have failed.
   check(
-    'portal itself excluded',
-    !list.some((a) => /sattest-api|sattest-worker|sat-api/i.test(a.name))
+    'harness api/worker excluded via sat.ignore',
+    !list.some((a) => /sattest|sat api|sat worker|sat monitoring/i.test(a.name)),
+    list.map((a) => a.name).join(', ')
   );
   check(
     'new applications have NULL business metadata',
@@ -338,12 +360,7 @@ console.log('\nTEST 6: decommissioning is admin-only and audited');
 // ---------------------------------------------------------------------------
 console.log('\nCLEANUP');
 {
-  try {
-    await docker(['container', 'stop', 'sattest-tool4']);
-    await docker(['container', 'rm', 'sattest-tool4']);
-  } catch {
-    /* already gone */
-  }
+  await removeIfPresent('sattest-tool4');
   console.log('   test containers removed');
 }
 

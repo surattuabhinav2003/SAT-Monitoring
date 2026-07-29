@@ -17,7 +17,7 @@ import './Applications.css';
  * rather than waiting for the 5-minute schedule.
  */
 export default function Applications() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, canRunDiscovery } = useAuth();
   const toast = useToast();
   const { applications, loading, error, reload, editApplication } = useApplications();
 
@@ -72,7 +72,9 @@ export default function Applications() {
           </p>
         </div>
 
-        {isAdmin && (
+        {/* Hidden unless the caller is a designated discovery operator — the
+            API enforces the same rule, so this is presentation only. */}
+        {canRunDiscovery && (
           <button className="btn btn--ghost" onClick={handleSync} disabled={syncing}>
             <RefreshIcon />
             {syncing ? 'Scanning…' : 'Run Discovery'}

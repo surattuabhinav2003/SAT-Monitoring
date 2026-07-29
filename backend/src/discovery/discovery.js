@@ -49,8 +49,17 @@ const INFRA_IMAGES = [
   'alpine',
 ];
 
-/** The portal's own containers must never appear in its own inventory. */
-const SELF_NAMES = ['sat-api', 'sat-db', 'sat-worker', 'sat-monitoring'];
+/**
+ * The portal's own containers must never appear in its own inventory.
+ *
+ * Checked against the container name, its compose project AND its image,
+ * because `docker compose build` bakes `com.docker.compose.project` into the
+ * image — so a container started from that image by any means reports the
+ * project and would otherwise be inventoried as "Sat Monitoring".
+ */
+const SELF_NAMES = ['sat-api', 'sat-db', 'sat-worker'];
+const SELF_PROJECTS = ['sat-monitoring'];
+const SELF_IMAGES = ['sat-monitoring-api'];
 
 const EXTRA_EXCLUDES = (process.env.DISCOVERY_EXCLUDE || '')
   .split(',')
@@ -113,6 +122,7 @@ export function isCandidate(container) {
   const labels = container.labels || {};
   const name = (container.name || '').toLowerCase();
   const project = (container.project || '').toLowerCase();
+  const image = (container.image || '').toLowerCase();
 
   if (String(labels[LABEL_IGNORE] || '').toLowerCase() === 'true') return false;
   if (!name) return false;
@@ -125,7 +135,14 @@ export function isCandidate(container) {
     return false;
   }
 
-  if (SELF_NAMES.some((s) => name === s || name.startsWith(`${s}-`))) return false;
+  // Self-exclusion across all three identifiers — see SELF_NAMES.
+  if (
+    SELF_NAMES.some((s) => name === s || name.startsWith(`${s}-`)) ||
+    SELF_PROJECTS.includes(project) ||
+    SELF_IMAGES.some((s) => image.includes(s))
+  ) {
+    return false;
+  }
 
   if (labels[LABEL_URL] || labels[LABEL_NAME]) return true;
 
