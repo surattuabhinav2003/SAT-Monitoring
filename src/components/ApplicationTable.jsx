@@ -23,7 +23,7 @@ const COLUMNS = [
   { key: 'team', label: 'Team', className: 'col-text' },
   { key: 'developedBy', label: 'Developed By', className: 'col-text' },
   { key: 'status', label: 'Status' },
-  { key: 'decommissioned', label: 'Decommission' },
+  { key: 'decommissioned', label: 'Decommissioned' },
   { key: 'gstackImplemented', label: 'Gstack' },
 ];
 
@@ -237,14 +237,20 @@ export default function ApplicationTable({
                       )}
                     </td>
                     <td>
-                      {/* Admin-owned. Neutral when in service so it does not echo
+                      {/* Admin-owned. The heading supplies the subject, so the cell
+                          only has to answer it. Neutral on "No" so it does not echo
                           the green Active signal from the Status column. */}
                       <span
                         className={`badge ${
                           app.decommissioned ? 'badge--decomm' : 'badge--not-decomm'
                         }`}
+                        title={
+                          app.decommissioned
+                            ? 'Decommissioned by an admin'
+                            : 'Not decommissioned — still in service'
+                        }
                       >
-                        {app.decommissioned ? 'Decommissioned' : 'In Service'}
+                        {app.decommissioned ? 'Yes' : 'No'}
                       </span>
                       {/* Decommissioned but still running — the container should
                           have been stopped, so surface it rather than hide it. */}
