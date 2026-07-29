@@ -95,12 +95,42 @@
   font-size: 0.9rem;
 }
 
+/* ---------------------------------------------------------------------------
+   Column sizing.
+
+   Eight columns have to fit inside the content area with the sidebar expanded,
+   otherwise the table gains a horizontal scrollbar and the last columns are cut
+   off. Text columns therefore truncate rather than forcing the table wider.
+   --------------------------------------------------------------------------- */
+
+.col-name {
+  min-width: 150px;
+  max-width: 240px;
+}
+
+.col-url {
+  min-width: 110px;
+  max-width: 190px;
+}
+
+.col-text {
+  min-width: 84px;
+  max-width: 150px;
+}
+
+.data-table tbody td.col-name,
+.data-table tbody td.col-url,
+.data-table tbody td.col-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .data-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
   text-align: left;
-  padding: 11px 18px;
+  padding: 11px 14px;
   background: var(--bg-subtle);
   color: var(--text-tertiary);
   font-weight: var(--fw-semibold);
@@ -112,7 +142,7 @@
 }
 
 .data-table tbody td {
-  padding: 14px 18px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   white-space: nowrap;
@@ -140,18 +170,22 @@
   font-weight: var(--fw-semibold);
 }
 
-/* Flags an application discovery created but nobody has completed yet. */
+/* Flags an application whose business details are still missing. A single
+   character keeps it out of the way of the name it annotates; the tooltip and the
+   "Missing Details" filter carry the meaning. */
 .needs-detail {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--warning-soft);
-  color: var(--warning);
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  color: #fff;
   font-size: 10px;
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+  font-weight: var(--fw-semibold);
+  vertical-align: middle;
+  cursor: help;
 }
 
 .cell-empty {
@@ -169,14 +203,6 @@
   text-decoration: underline;
 }
 
-/* The shared domain, named once in the column header instead of on every row. */
-.th-note {
-  margin-left: 6px;
-  font-weight: var(--fw-regular);
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-tertiary);
-}
 
 .empty-row {
   text-align: center;
@@ -259,7 +285,8 @@
   background: rgba(1, 41, 172, 0.03);
 }
 
-/* Where the URL came from: label / nginx / manual. */
+/* Where the URL came from: label / nginx / manual. Hidden on narrower viewports,
+   where the width is better spent on the values themselves. */
 .url-source {
   margin-left: 7px;
   padding: 1px 6px;
@@ -271,6 +298,12 @@
   letter-spacing: 0.03em;
   text-transform: uppercase;
   vertical-align: middle;
+}
+
+@media (max-width: 1500px) {
+  .url-source {
+    display: none;
+  }
 }
 
 /* Raw Docker HEALTHCHECK state alongside the mapped status. */

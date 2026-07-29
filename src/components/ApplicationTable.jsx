@@ -12,13 +12,18 @@ import './ApplicationTable.css';
 
 const PAGE_SIZE = 8;
 
+/**
+ * Headings are kept short so all eight columns fit without a horizontal
+ * scrollbar once the sidebar is expanded. `className` drives per-column width
+ * and truncation.
+ */
 const COLUMNS = [
-  { key: 'name', label: 'Application Name' },
-  { key: 'url', label: 'Application URL' },
-  { key: 'team', label: 'Team Using' },
-  { key: 'developedBy', label: 'Developed By' },
+  { key: 'name', label: 'Application', className: 'col-name' },
+  { key: 'url', label: 'URL', className: 'col-url' },
+  { key: 'team', label: 'Team', className: 'col-text' },
+  { key: 'developedBy', label: 'Developed By', className: 'col-text' },
   { key: 'status', label: 'Status' },
-  { key: 'decommissioned', label: 'Decommission Status' },
+  { key: 'decommissioned', label: 'Decommission' },
   { key: 'gstackImplemented', label: 'Gstack' },
 ];
 
@@ -158,13 +163,8 @@ export default function ApplicationTable({
           <thead>
             <tr>
               {COLUMNS.map((col) => (
-                <th key={col.key}>
+                <th key={col.key} className={col.className}>
                   {col.label}
-                  {/* Name the domain that was stripped from every row, so the
-                      shortened values are not ambiguous. */}
-                  {col.key === 'url' && sharedDomain && (
-                    <span className="th-note">.{sharedDomain}</span>
-                  )}
                 </th>
               ))}
               {isAdmin && <th className="col-actions">Actions</th>}
@@ -189,15 +189,15 @@ export default function ApplicationTable({
                 const live = liveStateOf(app);
                 return (
                   <tr key={app.id} className={app.pendingReview ? 'row--pending' : ''}>
-                    <td className="cell-name">
+                    <td className="cell-name col-name" title={app.name}>
                       {app.name}
                       {(!app.team || !app.developedBy) && !app.pendingReview && (
-                        <span className="needs-detail" title="Team Using / Developed By not set">
-                          Details needed
+                        <span className="needs-detail" title="Team / Developed By not set">
+                          !
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className="col-url">
                       {app.url ? (
                         <a
                           href={app.url}
@@ -221,8 +221,12 @@ export default function ApplicationTable({
                         </span>
                       )}
                     </td>
-                    <td>{app.team || <span className="cell-empty">—</span>}</td>
-                    <td>{app.developedBy || <span className="cell-empty">—</span>}</td>
+                    <td className="col-text" title={app.team || ''}>
+                      {app.team || <span className="cell-empty">—</span>}
+                    </td>
+                    <td className="col-text" title={app.developedBy || ''}>
+                      {app.developedBy || <span className="cell-empty">—</span>}
+                    </td>
                     <td>
                       <span className={`badge ${badgeClassFor(live)}`}>{live}</span>
                       {/* Raw Docker health, kept visible for diagnosis. */}
@@ -254,12 +258,17 @@ export default function ApplicationTable({
                       )}
                     </td>
                     <td>
+                      {/* "Yes"/"No" rather than "Implemented"/"Not Implemented":
+                          the column heading already supplies the subject, and the
+                          long form cost enough width to push the table into a
+                          horizontal scrollbar. */}
                       <span
                         className={`badge ${
                           app.gstackImplemented ? 'badge--gstack' : 'badge--no-gstack'
                         }`}
+                        title={app.gstackImplemented ? 'Gstack implemented' : 'Gstack not implemented'}
                       >
-                        {app.gstackImplemented ? 'Implemented' : 'Not Implemented'}
+                        {app.gstackImplemented ? 'Yes' : 'No'}
                       </span>
                     </td>
                     {isAdmin && (
