@@ -16,7 +16,6 @@ const COLUMNS = [
   { key: 'developedBy', label: 'Developed By' },
   { key: 'status', label: 'Status' },
   { key: 'gstackImplemented', label: 'Gstack' },
-  { key: 'lastSeen', label: 'Last Seen' },
 ];
 
 /**
@@ -216,7 +215,6 @@ export default function ApplicationTable({
                         {app.gstackImplemented ? 'Implemented' : 'Not Implemented'}
                       </span>
                     </td>
-                    <td className="cell-seen">{relativeSeen(app.lastSeen)}</td>
                     {isAdmin && (
                       <td className="col-actions">
                         {app.pendingReview && (
@@ -289,21 +287,6 @@ export default function ApplicationTable({
       </div>
     </div>
   );
-}
-
-/** "4 mins ago" — more useful than a timestamp for a liveness column. */
-function relativeSeen(value) {
-  if (!value) return <span className="cell-empty">never</span>;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return <span className="cell-empty">—</span>;
-  const mins = Math.round((Date.now() - d.getTime()) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins === 1) return '1 min ago';
-  if (mins < 60) return `${mins} mins ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'} ago`;
-  const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 /* --- Inline icons --- */
