@@ -193,14 +193,57 @@
 }
 
 
+/* Reads as a link at rest, not only on hover: colour alone is not a reliable
+   affordance, so the underline is always present and the arrow marks that it
+   opens outside the portal. */
 .url-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
   color: var(--accent);
-  text-decoration: none;
   font-weight: var(--fw-medium);
+  text-decoration: underline;
+  /* Fallback first: a browser without color-mix keeps the softened underline
+     rather than falling back to a full-strength one. */
+  text-decoration-color: rgba(1, 41, 172, 0.35);
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 0.14s ease, text-decoration-color 0.14s ease;
+}
+
+.url-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .url-link:hover {
-  text-decoration: underline;
+  color: var(--accent-strong);
+  text-decoration-color: currentColor;
+}
+
+/* The arrow strengthens with the link rather than sitting at full weight. */
+.url-ext {
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.url-link:hover .url-ext {
+  opacity: 1;
+  transform: translate(1px, -1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .url-link,
+  .url-ext {
+    transition: none;
+  }
+  .url-link:hover .url-ext {
+    transform: none;
+  }
 }
 
 

@@ -19,7 +19,7 @@ const PAGE_SIZE = 8;
  */
 const COLUMNS = [
   { key: 'name', label: 'Application', className: 'col-name' },
-  { key: 'url', label: 'URL', className: 'col-url' },
+  { key: 'url', label: 'Link', className: 'col-url' },
   { key: 'team', label: 'Team', className: 'col-text' },
   { key: 'developedBy', label: 'Developed By', className: 'col-text' },
   { key: 'status', label: 'Status' },
@@ -208,7 +208,12 @@ export default function ApplicationTable({
                           // the link itself always carry the full address.
                           title={app.url}
                         >
-                          {shortHost(prettyUrl(app.url), sharedDomain)}
+                          <span className="url-text">
+                            {shortHost(prettyUrl(app.url), sharedDomain)}
+                          </span>
+                          {/* Signals that the link leaves the portal, which the
+                              target="_blank" behaviour otherwise gives no warning of. */}
+                          <ExternalIcon />
                           {app.urlSource && (
                             <span className="url-source" title={`Resolved from ${app.urlSource}`}>
                               {app.urlSource}
@@ -375,6 +380,25 @@ function CheckIcon() {
     </svg>
   );
 }
+/** Small "opens in a new tab" arrow shown inside each application link. */
+function ExternalIcon() {
+  return (
+    <svg
+      className="url-ext"
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      aria-hidden="true"
+    >
+      <path d="M7 17L17 7" />
+      <path d="M9 7h8v8" />
+    </svg>
+  );
+}
+
 function LinkIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
