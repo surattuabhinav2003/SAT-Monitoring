@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   compareValues,
   prettyUrl,
@@ -364,29 +364,119 @@ const TEAM_CHIP_LIMIT = 2;
  * Teams as chips, with a fixed visual budget.
  *
  * An application may be used by several teams. Rendering all of them would make
- * row heights uneven and push the table wider the moment one application has
- * four teams — so the first two are shown and the remainder collapse into a
- * "+2" counter whose tooltip lists them all. Every row keeps the same height
- * whether it names one team or six.
+ * row heights uneven and widen the table, so the first two are shown and the rest
+ * collapse into a "+6" counter. Clicking the counter opens the full list — a
+ * tooltip alone was not enough, since it needs a mouse and cannot be reached by
+ * keyboard or touch.
  */
 function TeamChips({ value }) {
   const teams = parseTeams(value);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(e) {
+      if (
+        !popRef.current?.contains(e.target) &&
+        !btnRef.current?.contains(e.target)
+      ) {
+        setOpen(false);
+      }
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        btnRef.current?.focus();
+      }
+    }
+    // The popover is positioned from a one-off measurement, so it would drift if
+    // the page moved underneath it.
+    function onReflow() {
+      setOpen(false);
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onReflow);
+    window.addEventListener('scroll', onReflow, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('scroll', onReflow, true);
+    };
+  }, [open]);
+
   if (teams.length === 0) return <span className="cell-empty">—</span>;
 
   const shown = teams.slice(0, TEAM_CHIP_LIMIT);
   const hidden = teams.slice(TEAM_CHIP_LIMIT);
 
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = btnRef.current.getBoundingClientRect();
+    const width = 230;
+    setPos({
+      top: rect.bottom + 6,
+      // Clamp so the panel cannot hang off the right edge of the window.
+      left: Math.min(rect.left, window.innerWidth - width - 12),
+      width,
+    });
+    setOpen(true);
+  }
+
   return (
-    <span className="team-chips" title={teams.join(', ')}>
+    <span className="team-chips">
       {shown.map((team) => (
         <span key={team} className="team-chip">
           {team}
         </span>
       ))}
+
       {hidden.length > 0 && (
-        <span className="team-chip team-chip--more" title={hidden.join(', ')}>
-          +{hidden.length}
-        </span>
+        <>
+          <button
+            ref={btnRef}
+            type="button"
+            className={`team-chip team-chip--more ${open ? 'is-open' : ''}`}
+            onClick={toggle}
+            aria-expanded={open}
+            aria-label={`Show all ${teams.length} teams`}
+          >
+            +{hidden.length}
+          </button>
+
+          {/* Fixed position, because the cell clips its overflow — an absolutely
+              positioned panel would be cut off by the column. */}
+          {open && pos && (
+            <div
+              ref={popRef}
+              className="team-pop"
+              style={{ top: pos.top, left: pos.left, width: pos.width }}
+              role="dialog"
+              aria-label="Teams using this application"
+            >
+              <p className="team-pop-head">
+                Teams using this
+                <span>{teams.length}</span>
+              </p>
+              <div className="team-pop-body">
+                {teams.map((team) => (
+                  <span key={team} className="team-chip">
+                    {team}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </span>
   );
