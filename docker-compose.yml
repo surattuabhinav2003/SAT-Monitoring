@@ -48,6 +48,8 @@ services:
       # Never enable discovery in the API — that would require the socket.
       DISCOVERY_ENABLED: 'false'
       DISCOVERY_OPERATORS: ${DISCOVERY_OPERATORS:-}
+      # Closed set of teams an application may be used by.
+      TEAMS: ${TEAMS:-}
     ports:
       - '4000:4000'
     # Defence in depth: the API needs no write access to its own filesystem and

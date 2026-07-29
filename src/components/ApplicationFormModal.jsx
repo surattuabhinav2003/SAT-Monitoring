@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
+import { getTeams } from '../services/applicationService.js';
+import { parseTeams } from '../utils/helpers.js';
 import './ApplicationFormModal.css';
 
 const EMPTY = {
@@ -23,6 +25,27 @@ const EMPTY = {
 export default function ApplicationFormModal({ open, application, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  const [teams, setTeams] = useState([]);
+
+  // Fetched once, not per open: the list rarely changes and this avoids a
+  // request every time the modal is used.
+  useEffect(() => {
+    getTeams()
+      .then(setTeams)
+      .catch(() => setTeams([]));
+  }, []);
+
+  const selectedTeams = parseTeams(form.team);
+
+  function toggleTeam(team) {
+    const next = selectedTeams.includes(team)
+      ? selectedTeams.filter((t) => t !== team)
+      : [...selectedTeams, team];
+    // Store in the configured order so the value is stable regardless of the
+    // order boxes were ticked.
+    const ordered = teams.filter((t) => next.includes(t));
+    update('team', ordered.join(', '));
+  }
 
   // Reset whenever the modal opens (or the record changes).
   useEffect(() => {
@@ -89,19 +112,38 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
 
         {/* --- Admin-owned --- */}
         <div className="form-row">
-          <div className="form-field">
-            <label htmlFor="team">Team Using</label>
-            <input
-              id="team"
-              type="text"
-              value={form.team}
-              onChange={(e) => update('team', e.target.value)}
-              placeholder="e.g. Analytics, Finance"
-            />
+          {/* Teams are a closed set, so this is a picker rather than free text —
+              nobody can invent a ninth team by mistyping. */}
+          <fieldset className="form-field team-picker">
+            <legend>Team Using</legend>
+            {teams.length === 0 ? (
+              <p className="field-hint">Loading teams…</p>
+            ) : (
+              <div className="team-options">
+                {teams.map((team) => {
+                  const active = selectedTeams.includes(team);
+                  return (
+                    <label
+                      key={team}
+                      className={`team-option ${active ? 'is-active' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={() => toggleTeam(team)}
+                      />
+                      {team}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
             <span className="field-hint">
-              Separate multiple teams with a comma.
+              {selectedTeams.length === 0
+                ? 'Select every team that uses this application.'
+                : `${selectedTeams.length} selected`}
             </span>
-          </div>
+          </fieldset>
 
           <div className="form-field">
             <label htmlFor="developedBy">Developed By</label>

@@ -64,6 +64,17 @@ export async function setApplicationUrl(id, url) {
   return normalize(data);
 }
 
+/**
+ * The company's teams, from the API.
+ *
+ * Fetched rather than hardcoded so the picker always matches what the server
+ * will accept — a local copy would silently drift when the list changes.
+ */
+export async function getTeams() {
+  const { data } = await api.get('/applications/teams');
+  return data.teams || [];
+}
+
 export async function getDiscoveryState() {
   const { data } = await api.get('/applications/discovery');
   return data;
