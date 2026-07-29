@@ -53,6 +53,24 @@ export function commonHostSuffix(hosts) {
   return shared.join('.');
 }
 
+/**
+ * Split a stored team value into individual team names.
+ *
+ * An application can be used by several teams, held as a comma-separated list in
+ * the one column. Parsing lives here so the table, the dashboard grouping and the
+ * edit form all agree on what "two teams" means.
+ *
+ * Tolerates the separators people actually type — commas, semicolons, slashes and
+ * the word "and" — and drops empties so a trailing comma is harmless.
+ */
+export function parseTeams(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/\s*(?:,|;|\/|\||\band\b)\s*/i)
+    .map((t) => t.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+}
+
 /** Host with a shared suffix removed; returns the host unchanged if it lacks it. */
 export function shortHost(host, suffix) {
   if (!host) return host;

@@ -7,7 +7,7 @@ import Modal from '../components/Modal.jsx';
 import { getApplications, getDiscoveryState } from '../services/applicationService.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { lifecycleOf, badgeClassFor } from '../utils/helpers.js';
+import { lifecycleOf, badgeClassFor, parseTeams } from '../utils/helpers.js';
 import '../components/ApplicationTable.css'; // shared .badge styles
 import './Dashboard.css';
 
@@ -89,20 +89,22 @@ export default function Dashboard() {
   }, [apps, activeCategory]);
 
   const teamData = useMemo(() => {
+    // An application used by several teams counts once for EACH of them, so the
+    // totals here can legitimately exceed the number of applications.
     // Grouped case-insensitively; the first spelling seen becomes the label.
     const map = new Map();
     apps.forEach((a) => {
-      const raw = (a.team || '').trim();
-      if (!raw) return;
-      const key = raw.toLowerCase();
-      const existing = map.get(key);
-      if (existing) existing.count += 1;
-      else map.set(key, { team: raw, count: 1 });
+      parseTeams(a.team).forEach((team) => {
+        const key = team.toLowerCase();
+        const existing = map.get(key);
+        if (existing) existing.count += 1;
+        else map.set(key, { team, count: 1 });
+      });
     });
     return Array.from(map.values());
   }, [apps]);
 
-  const untagged = apps.filter((a) => !a.team).length;
+  const untagged = apps.filter((a) => parseTeams(a.team).length === 0).length;
   const attention = counts.pending + counts.mapping + counts.review;
   const isEmpty = !loading && apps.length === 0;
 
@@ -296,7 +298,19 @@ export default function Dashboard() {
                   return (
                     <tr key={app.id}>
                       <td className="drill-name">{app.name}</td>
-                      <td>{app.team || <span className="cell-empty">—</span>}</td>
+                      <td>
+                        {parseTeams(app.team).length > 0 ? (
+                          <span className="team-chips" title={app.team}>
+                            {parseTeams(app.team).map((t) => (
+                              <span key={t} className="team-chip">
+                                {t}
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="cell-empty">—</span>
+                        )}
+                      </td>
                       <td>{app.developedBy || <span className="cell-empty">—</span>}</td>
                       <td>
                         <span className={`badge ${badgeClassFor(state)}`}>{state}</span>

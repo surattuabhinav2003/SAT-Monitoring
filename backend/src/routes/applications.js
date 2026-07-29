@@ -110,6 +110,47 @@ async function canonicalise(column, value) {
   return rows.length > 0 ? rows[0].label : value;
 }
 
+/** Separators people actually type between team names. */
+const TEAM_SPLIT = /\s*(?:,|;|\/|\||\band\b)\s*/i;
+
+/**
+ * Normalise the team field, which may name SEVERAL teams.
+ *
+ * Stored as a comma-separated list in one column. Each name is canonicalised
+ * INDIVIDUALLY against the names already in use, which the whole-value
+ * canonicalise() above cannot do once a cell holds more than one team — it would
+ * try to match "Analytics, Finance" as a single label and never hit.
+ *
+ * Duplicates are dropped case-insensitively so "Analytics, analytics" collapses.
+ */
+async function canonicaliseTeams(value) {
+  const names = String(value ?? '')
+    .split(TEAM_SPLIT)
+    .map((t) => t.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+  if (names.length === 0) return null;
+
+  // Every team name already known, so a new entry adopts the existing spelling.
+  const { rows } = await query('SELECT DISTINCT team FROM applications WHERE team IS NOT NULL');
+  const known = new Map();
+  for (const row of rows) {
+    for (const name of String(row.team).split(TEAM_SPLIT)) {
+      const clean = name.trim().replace(/\s+/g, ' ');
+      if (clean && !known.has(clean.toLowerCase())) known.set(clean.toLowerCase(), clean);
+    }
+  }
+
+  const seen = new Set();
+  const out = [];
+  for (const name of names) {
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(known.get(key) || name);
+  }
+  return out.join(', ');
+}
+
 // GET /api/applications
 router.get(
   '/',
@@ -277,7 +318,8 @@ router.put(
     const before = await query('SELECT decommissioned FROM applications WHERE id = $1', [id]);
     if (before.rows.length === 0) throw new ApiError(404, 'Application not found.');
 
-    if ('team' in fields) fields.team = await canonicalise('team', fields.team);
+    // Teams are a list; developed_by is a single owner.
+    if ('team' in fields) fields.team = await canonicaliseTeams(fields.team);
     if ('developedBy' in fields) {
       fields.developedBy = await canonicalise('developed_by', fields.developedBy);
     }

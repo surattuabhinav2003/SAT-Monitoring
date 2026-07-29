@@ -118,6 +118,13 @@
   max-width: 150px;
 }
 
+/* Chips need a little more room than plain text, but stay capped so four teams
+   cannot widen the table. */
+.col-teams {
+  min-width: 110px;
+  max-width: 200px;
+}
+
 .data-table tbody td.col-name,
 .data-table tbody td.col-url,
 .data-table tbody td.col-text {
@@ -190,6 +197,43 @@
 
 .cell-empty {
   color: var(--text-tertiary);
+}
+
+/* --- Team chips --- */
+
+.team-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  /* nowrap keeps every row the same height however many teams are named. */
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.team-chip {
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The overflow counter must never be the thing that gets truncated. */
+.team-chip--more {
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
 }
 
 

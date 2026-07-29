@@ -4,6 +4,7 @@ import {
   prettyUrl,
   shortHost,
   commonHostSuffix,
+  parseTeams,
   lifecycleOf,
   liveStateOf,
   badgeClassFor,
@@ -20,7 +21,7 @@ const PAGE_SIZE = 8;
 const COLUMNS = [
   { key: 'name', label: 'Application', className: 'col-name' },
   { key: 'url', label: 'Link', className: 'col-url' },
-  { key: 'team', label: 'Team', className: 'col-text' },
+  { key: 'team', label: 'Team Using', className: 'col-teams' },
   { key: 'developedBy', label: 'Developed By', className: 'col-text' },
   { key: 'status', label: 'Status' },
   { key: 'decommissioned', label: 'Decommissioned' },
@@ -226,8 +227,8 @@ export default function ApplicationTable({
                         </span>
                       )}
                     </td>
-                    <td className="col-text" title={app.team || ''}>
-                      {app.team || <span className="cell-empty">—</span>}
+                    <td className="col-teams">
+                      <TeamChips value={app.team} />
                     </td>
                     <td className="col-text" title={app.developedBy || ''}>
                       {app.developedBy || <span className="cell-empty">—</span>}
@@ -353,6 +354,41 @@ export default function ApplicationTable({
         </div>
       </div>
     </div>
+  );
+}
+
+/** How many team chips to show before collapsing the rest into a counter. */
+const TEAM_CHIP_LIMIT = 2;
+
+/**
+ * Teams as chips, with a fixed visual budget.
+ *
+ * An application may be used by several teams. Rendering all of them would make
+ * row heights uneven and push the table wider the moment one application has
+ * four teams — so the first two are shown and the remainder collapse into a
+ * "+2" counter whose tooltip lists them all. Every row keeps the same height
+ * whether it names one team or six.
+ */
+function TeamChips({ value }) {
+  const teams = parseTeams(value);
+  if (teams.length === 0) return <span className="cell-empty">—</span>;
+
+  const shown = teams.slice(0, TEAM_CHIP_LIMIT);
+  const hidden = teams.slice(TEAM_CHIP_LIMIT);
+
+  return (
+    <span className="team-chips" title={teams.join(', ')}>
+      {shown.map((team) => (
+        <span key={team} className="team-chip">
+          {team}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span className="team-chip team-chip--more" title={hidden.join(', ')}>
+          +{hidden.length}
+        </span>
+      )}
+    </span>
   );
 }
 

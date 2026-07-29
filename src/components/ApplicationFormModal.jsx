@@ -96,8 +96,11 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
               type="text"
               value={form.team}
               onChange={(e) => update('team', e.target.value)}
-              placeholder="e.g. Analytics"
+              placeholder="e.g. Analytics, Finance"
             />
+            <span className="field-hint">
+              Separate multiple teams with a comma.
+            </span>
           </div>
 
           <div className="form-field">
