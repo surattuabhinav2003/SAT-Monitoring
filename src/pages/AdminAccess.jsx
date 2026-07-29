@@ -94,13 +94,15 @@ export default function AdminAccess() {
 
   return (
     <div className="admin-access-page">
-      <div className="page-heading">
-        <h1>Admin Access</h1>
-        <p>
-          Grant or remove admin access. Admins can create, edit and delete
-          applications; everyone else has read-only access.
-        </p>
-      </div>
+      <header className="page-head">
+        <div>
+          <h1>Admin Access</h1>
+          <p>
+            Grant or remove admin access. Admins approve discovered applications
+            and maintain their details; everyone else has read-only access.
+          </p>
+        </div>
+      </header>
 
       {/* --- Grant form --- */}
       <section className="access-panel">

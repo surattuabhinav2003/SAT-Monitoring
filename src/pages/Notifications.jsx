@@ -75,8 +75,8 @@ export default function Notifications() {
 
   return (
     <div className="notifications-page">
-      <div className="applications-header">
-        <div className="page-heading">
+      <header className="page-head">
+        <div>
           <h1>Notifications</h1>
           <p>
             Raised automatically when Docker discovery finds a new tool, or when
@@ -85,11 +85,13 @@ export default function Notifications() {
         </div>
 
         {isAdmin && unreadCount > 0 && (
-          <button className="btn btn--ghost" onClick={handleMarkAll}>
-            Mark all as read
-          </button>
+          <div className="page-head-actions">
+            <button className="btn btn--ghost" onClick={handleMarkAll}>
+              Mark all as read
+            </button>
+          </div>
         )}
-      </div>
+      </header>
 
       <div className="notif-toolbar">
         <div className="notif-tabs">

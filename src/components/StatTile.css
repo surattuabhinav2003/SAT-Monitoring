@@ -1,0 +1,141 @@
+.stat-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  font-family: inherit;
+  overflow: hidden;
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+/* A 3px top accent instead of a heavy left border — quieter, and it does not
+   make a zero count look like a failure. */
+.stat-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--tile-accent, var(--border-color));
+}
+
+.stat-tile--neutral { --tile-accent: var(--accent); --tile-ink: var(--accent); --tile-wash: var(--accent-soft); }
+.stat-tile--accent  { --tile-accent: var(--accent); --tile-ink: var(--accent); --tile-wash: var(--accent-soft); }
+.stat-tile--success { --tile-accent: var(--success); --tile-ink: var(--success); --tile-wash: var(--success-soft); }
+.stat-tile--warning { --tile-accent: var(--warning); --tile-ink: var(--warning); --tile-wash: var(--warning-soft); }
+.stat-tile--danger  { --tile-accent: var(--danger);  --tile-ink: var(--danger);  --tile-wash: var(--danger-soft); }
+.stat-tile--muted   { --tile-accent: #e2e3f4; --tile-ink: var(--text-tertiary); --tile-wash: var(--bg-subtle); }
+
+.stat-tile-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.stat-tile-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--tile-wash);
+  color: var(--tile-ink);
+}
+
+.stat-tile-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.stat-tile-label {
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The number is the point of the tile, so it gets real size and tight tracking. */
+.stat-tile-value {
+  font-size: 2rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-tile-hint {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.stat-tile-skeleton {
+  display: block;
+  width: 44px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-subtle) 25%,
+    var(--border-color) 50%,
+    var(--bg-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: tile-shimmer 1.3s infinite;
+}
+
+@keyframes tile-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* --- Interactive --- */
+
+.stat-tile.is-clickable {
+  cursor: pointer;
+}
+
+.stat-tile-chev {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  font-size: 0.85rem;
+  color: var(--tile-ink);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.stat-tile.is-clickable:hover,
+.stat-tile.is-clickable:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--tile-accent);
+  outline: none;
+}
+
+.stat-tile.is-clickable:hover .stat-tile-chev,
+.stat-tile.is-clickable:focus-visible .stat-tile-chev {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-tile,
+  .stat-tile-chev,
+  .stat-tile-skeleton {
+    transition: none;
+    animation: none;
+  }
+}

@@ -1,16 +1,42 @@
-.applications-header {
+.applications-page {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
   flex-wrap: wrap;
 }
 
+.is-spinning {
+  animation: spin-icon 0.9s linear infinite;
+}
+
+@keyframes spin-icon {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning {
+    animation: none;
+  }
+}
+
 .error-state {
-  padding: 40px;
+  padding: 34px;
   text-align: center;
   color: var(--danger);
   background: var(--danger-soft);
+  border: 1px solid var(--danger);
   border-radius: var(--radius-lg);
+}
+
+.error-state p {
+  margin: 0;
 }

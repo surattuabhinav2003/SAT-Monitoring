@@ -19,6 +19,18 @@
   background: var(--bg-app);
 }
 
+/**
+ * Cap the measure and centre it.
+ *
+ * Without this, content stretched to the full window: on a wide monitor a
+ * three-card row gave each card ~500px to hold two lines of text, which was the
+ * main reason the dashboard looked empty and unfinished.
+ */
+.app-content > * {
+  max-width: 1360px;
+  margin-inline: auto;
+}
+
 /* Mobile: the sidebar becomes an off-screen drawer, so a top bar is needed to
    open it. */
 @media (max-width: 768px) {

@@ -11,29 +11,32 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
   flex-wrap: wrap;
 }
 
 .table-search {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: 9px;
+  padding: 9px 14px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--text-secondary);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
   flex: 1;
   min-width: 220px;
-  max-width: 360px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  max-width: 340px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .table-search:focus-within {
+  background: var(--bg-surface);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+  color: var(--accent);
 }
 
 .table-search input {
@@ -41,23 +44,45 @@
   background: transparent;
   outline: none;
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font-family: inherit;
+  font-size: 0.88rem;
   width: 100%;
 }
 
 .table-filters {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
+/* Custom chevron so the control matches the rest of the UI rather than using
+   the platform's default select styling. */
 .table-filters select {
-  padding: 9px 12px;
+  appearance: none;
+  padding: 9px 32px 9px 14px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-input);
+  border-radius: 999px;
+  background-color: var(--bg-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23707070' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 13px;
   color: var(--text-primary);
-  font-size: 0.88rem;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: var(--fw-medium);
   cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.table-filters select:hover {
+  border-color: var(--accent-light);
+}
+
+.table-filters select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .table-scroll {
@@ -71,20 +96,23 @@
 }
 
 .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   text-align: left;
-  padding: 13px 18px;
+  padding: 11px 18px;
   background: var(--bg-subtle);
-  color: var(--text-secondary);
-  font-weight: 600;
-  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.07em;
   white-space: nowrap;
   border-bottom: 1px solid var(--border-color);
 }
 
 .data-table tbody td {
-  padding: 13px 18px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   white-space: nowrap;
@@ -94,8 +122,32 @@
   border-bottom: none;
 }
 
+.data-table tbody tr {
+  transition: background 0.12s ease;
+}
+
 .data-table tbody tr:hover {
   background: var(--bg-hover);
+}
+
+/* Row actions stay out of the way until the row is hovered, so the table reads
+   as data rather than a wall of buttons. Always visible on touch, where there is
+   no hover, and whenever focused for keyboard users. */
+.col-actions .row-action {
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.data-table tbody tr:hover .row-action,
+.data-table tbody tr:focus-within .row-action {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .col-actions .row-action {
+    opacity: 1;
+  }
 }
 
 .cell-name {
@@ -137,17 +189,39 @@
 
 .empty-row {
   text-align: center;
-  padding: 40px !important;
-  color: var(--text-secondary);
+  padding: 52px 30px !important;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  white-space: normal !important;
 }
 
 /* Status badges */
 .badge {
-  display: inline-block;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
   border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 600;
+  font-size: 0.74rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* A leading dot makes state legible without relying on colour alone. */
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* The gstack column is a yes/no attribute, not a state — no dot needed. */
+.badge--gstack::before,
+.badge--no-gstack::before {
+  display: none;
 }
 
 .badge--active {
@@ -245,15 +319,17 @@
 }
 
 .row-action {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
   border: 1px solid var(--border-color);
   background: var(--bg-surface);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
   margin-left: 6px;
-  transition: all 0.15s ease;
+  vertical-align: middle;
 }
 
 .row-action:hover {
@@ -273,15 +349,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 12px 18px;
   border-top: 1px solid var(--border-color);
+  background: var(--bg-subtle);
   flex-wrap: wrap;
   gap: 10px;
 }
 
 .table-count {
-  font-size: 0.84rem;
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .pagination {
@@ -290,16 +369,18 @@
 }
 
 .page-btn {
-  min-width: 34px;
-  height: 34px;
-  padding: 0 8px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 9px;
   border: 1px solid var(--border-color);
   background: var(--bg-surface);
-  color: var(--text-primary);
-  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.15s ease;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: var(--fw-medium);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .page-btn:hover:not(:disabled) {

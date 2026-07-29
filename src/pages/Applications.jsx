@@ -111,45 +111,41 @@ export default function Applications() {
 
   return (
     <div className="applications-page">
-      <div className="applications-header">
-        <div className="page-heading">
+      <header className="page-head">
+        <div>
           <h1>Applications</h1>
           <p>
-            Discovered automatically from Docker. Admins approve new entries and
-            maintain the business details — team, owner, gstack and decommission
-            status.
+            Discovered automatically from Docker. Approve new entries and maintain
+            the business details — team, owner, gstack and decommission status.
           </p>
         </div>
 
-        {canRunDiscovery && (
-          <button
-            className="btn btn--ghost"
-            onClick={handleRequestScan}
-            disabled={requesting}
-          >
-            <RefreshIcon />
-            {requesting ? 'Scanning…' : 'Run Discovery'}
-          </button>
-        )}
-      </div>
-
-      {latest && (
-        <p className="discovery-meta">
-          Last scan {formatWhen(latest.startedAt)}
-          {latest.errors ? (
-            <span className="discovery-error"> — failed: {latest.errors}</span>
-          ) : (
-            <>
-              {' '}
-              — {latest.containersScanned} container(s) scanned,{' '}
-              {latest.applicationsDiscovered} new, {latest.applicationsDeactivated} stopped
-              {latest.needsMapping > 0 && `, ${latest.needsMapping} needing mapping`}
-              {latest.durationMs != null && ` · ${latest.durationMs} ms`}
-            </>
+        <div className="page-head-actions">
+          {latest && (
+            <span className={`run-chip ${latest.errors ? 'run-chip--bad' : ''}`}>
+              <span className="run-dot" aria-hidden="true" />
+              {latest.errors ? (
+                'Discovery failing'
+              ) : (
+                <>
+                  Scanned {formatWhen(latest.startedAt)}
+                  <em>{latest.containersScanned} containers</em>
+                </>
+              )}
+            </span>
           )}
-          {discovery?.schedule && ` · schedule ${discovery.schedule}`}
-        </p>
-      )}
+          {canRunDiscovery && (
+            <button
+              className="btn btn--primary"
+              onClick={handleRequestScan}
+              disabled={requesting}
+            >
+              <RefreshIcon className={requesting ? 'is-spinning' : ''} />
+              {requesting ? 'Scanning…' : 'Run Discovery'}
+            </button>
+          )}
+        </div>
+      </header>
 
       {loading ? (
         <LoadingSpinner label="Loading applications…" />
@@ -250,9 +246,17 @@ function formatWhen(value) {
   });
 }
 
-function RefreshIcon() {
+function RefreshIcon({ className }) {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 12a9 9 0 1 1-3-6.7" />
       <path d="M21 3v6h-6" />
     </svg>
