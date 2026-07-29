@@ -3,6 +3,7 @@ import {
   compareValues,
   prettyUrl,
   lifecycleOf,
+  liveStateOf,
   badgeClassFor,
 } from '../utils/helpers.js';
 import './ApplicationTable.css';
@@ -15,6 +16,7 @@ const COLUMNS = [
   { key: 'team', label: 'Team Using' },
   { key: 'developedBy', label: 'Developed By' },
   { key: 'status', label: 'Status' },
+  { key: 'decommissioned', label: 'Decommission Status' },
   { key: 'gstackImplemented', label: 'Gstack' },
 ];
 
@@ -163,7 +165,9 @@ export default function ApplicationTable({
               </tr>
             ) : (
               pageRows.map((app) => {
-                const state = lifecycleOf(app);
+                // Live state and the decommission decision are shown in their own
+                // columns; each answers a different question.
+                const live = liveStateOf(app);
                 return (
                   <tr key={app.id} className={app.pendingReview ? 'row--pending' : ''}>
                     <td className="cell-name">
@@ -198,11 +202,32 @@ export default function ApplicationTable({
                     <td>{app.team || <span className="cell-empty">—</span>}</td>
                     <td>{app.developedBy || <span className="cell-empty">—</span>}</td>
                     <td>
-                      <span className={`badge ${badgeClassFor(state)}`}>{state}</span>
+                      <span className={`badge ${badgeClassFor(live)}`}>{live}</span>
                       {/* Raw Docker health, kept visible for diagnosis. */}
                       {app.healthStatus && app.healthStatus !== 'none' && (
                         <span className="health-note" title="Docker HEALTHCHECK state">
                           {app.healthStatus}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {/* Admin-owned. Neutral when in service so it does not echo
+                          the green Active signal from the Status column. */}
+                      <span
+                        className={`badge ${
+                          app.decommissioned ? 'badge--decomm' : 'badge--not-decomm'
+                        }`}
+                      >
+                        {app.decommissioned ? 'Decommissioned' : 'In Service'}
+                      </span>
+                      {/* Decommissioned but still running — the container should
+                          have been stopped, so surface it rather than hide it. */}
+                      {app.decommissioned && app.status === 'Active' && (
+                        <span
+                          className="health-note health-note--alert"
+                          title="Marked decommissioned but the container is still running"
+                        >
+                          still running
                         </span>
                       )}
                     </td>

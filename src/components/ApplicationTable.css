@@ -271,6 +271,12 @@
   white-space: nowrap;
 }
 
+/* Decommissioned but still running — a cleanup task, so it earns colour. */
+.health-note--alert {
+  color: var(--warning);
+  font-weight: var(--fw-medium);
+}
+
 .row-action--approve {
   color: var(--success);
   border-color: var(--success);

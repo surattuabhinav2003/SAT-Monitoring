@@ -22,21 +22,32 @@ export function prettyUrl(value) {
 }
 
 /**
- * Effective lifecycle state of an application, collapsing the flags that
- * discovery and admins each own into the single label a reader cares about.
+ * The LIVE state discovery observed, ignoring the admin's decommission decision.
  *
- * Order matters:
- *  - Decommissioned wins: once an admin has made that call it is the answer,
- *    regardless of whether a container happens to be running.
- *  - Pending Review comes next: the record exists but nobody has confirmed it
- *    belongs in the inventory, so its liveness is not yet meaningful.
- *  - Otherwise the discovered status stands (Active / Warning / Inactive).
+ * Kept separate from `lifecycleOf` because the two answer different questions,
+ * and the difference is informative: an application that is Decommissioned but
+ * still Active means the container is running when it should not be — a cleanup
+ * task that collapsing the two into one label would hide.
+ *
+ * Pending Review still takes precedence: until a human has confirmed the record
+ * belongs in the inventory, its liveness is not yet meaningful.
  */
-export function lifecycleOf(app) {
-  if (app?.decommissioned) return 'Decommissioned';
+export function liveStateOf(app) {
   if (app?.discoveryStatus === 'pending_review') return 'Pending Review';
   if (app?.status === 'Warning') return 'Warning';
   return app?.status === 'Active' ? 'Active' : 'Inactive';
+}
+
+/**
+ * Effective lifecycle state, collapsing every flag into the single label a
+ * reader wants when only one can be shown — dashboard tiles, drill-downs,
+ * filters.
+ *
+ * Decommissioned wins here: once an admin has made that call it is the answer.
+ */
+export function lifecycleOf(app) {
+  if (app?.decommissioned) return 'Decommissioned';
+  return liveStateOf(app);
 }
 
 /** Badge class for a lifecycle label. */
