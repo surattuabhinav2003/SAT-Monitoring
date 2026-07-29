@@ -87,22 +87,26 @@ export default function Applications() {
   }
 
   /**
-   * The API has no Docker access, so this only asks the worker to scan. The
-   * result appears when the worker finishes, hence the delayed refresh rather
-   * than reading a return value.
+   * Runs a discovery pass. The scan happens in the worker, but the API waits for
+   * it, so the result is reported directly rather than guessed at after a delay.
    */
   async function handleRequestScan() {
     setRequesting(true);
     try {
-      await runDiscovery();
-      toast.success('Discovery requested — the worker is scanning.');
-      // Give the worker a moment, then pick up whatever it wrote.
-      setTimeout(async () => {
-        await Promise.all([reload(), loadDiscovery()]);
-        setRequesting(false);
-      }, 4000);
+      const run = await runDiscovery();
+      const parts = [
+        `${run.containersScanned} container${run.containersScanned === 1 ? '' : 's'} scanned`,
+      ];
+      if (run.applicationsDiscovered > 0) parts.push(`${run.applicationsDiscovered} new`);
+      if (run.applicationsReactivated > 0) parts.push(`${run.applicationsReactivated} restored`);
+      if (run.applicationsDeactivated > 0) parts.push(`${run.applicationsDeactivated} stopped`);
+      if (run.needsMapping > 0) parts.push(`${run.needsMapping} needing a URL`);
+
+      toast.success(`Discovery complete — ${parts.join(', ')}.`);
+      await Promise.all([reload(), loadDiscovery()]);
     } catch (err) {
-      toast.error(err.message || 'Could not request discovery.');
+      toast.error(err.message || 'Discovery failed.');
+    } finally {
       setRequesting(false);
     }
   }

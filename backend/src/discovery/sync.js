@@ -332,6 +332,38 @@ export async function runSync({ trigger = 'scheduled', requestedBy = null } = {}
   }
 }
 
+/** The most recent run's id, or 0 when none has happened. */
+export async function latestRunId() {
+  const { rows } = await pool.query('SELECT COALESCE(max(id), 0) AS id FROM discovery_runs');
+  return Number(rows[0].id);
+}
+
+/**
+ * Wait for a run newer than `afterId` to finish, and return it.
+ *
+ * Lets the API report a real outcome for a manually triggered scan even though
+ * the work happens in the worker process: it asks, then watches the run table.
+ * Returns null on timeout rather than hanging.
+ */
+export async function waitForRunAfter(afterId, timeoutMs = 20_000, pollMs = 400) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query(
+      `SELECT id FROM discovery_runs
+        WHERE id > $1 AND completed_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1`,
+      [afterId]
+    );
+    if (rows.length > 0) {
+      const [run] = await getRecentRuns(1);
+      // getRecentRuns returns the newest overall, which is the one we just saw.
+      if (run && run.id > afterId) return run;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return null;
+}
+
 /** Latest runs, newest first — surfaced on the dashboard. */
 export async function getRecentRuns(limit = 10) {
   const { rows } = await pool.query(

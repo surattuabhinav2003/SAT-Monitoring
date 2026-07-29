@@ -3,7 +3,7 @@ import { query } from '../db.js';
 import { ApiError, asyncRoute } from '../errors.js';
 import { requireAuth, requireAdmin, requireDiscoveryOperator } from '../auth.js';
 import { requestRun, getDiscoveryState } from '../discovery/scheduler.js';
-import { getRecentRuns } from '../discovery/sync.js';
+import { getRecentRuns, latestRunId, waitForRunAfter } from '../discovery/sync.js';
 
 const router = Router();
 
@@ -217,20 +217,32 @@ router.get(
 /**
  * POST /api/applications/discovery/run
  *
- * Requests a pass from the discovery worker. Returns 202: the work happens in
- * another process, so there is nothing to report synchronously — poll
- * GET /discovery for the outcome.
+ * Runs a discovery pass and returns its result.
+ *
+ * The scan itself executes in the worker — this process has no Docker access by
+ * design — but the caller should not have to poll to find out what happened. So
+ * the request notifies the worker and then waits for that run to complete,
+ * returning the real counts. Bounded wait: a worker that is down produces a clear
+ * 504 rather than an open connection.
  */
 router.post(
   '/discovery/run',
   requireDiscoveryOperator,
   asyncRoute(async (req, res) => {
+    const before = await latestRunId();
     await requestRun(req.user.email);
-    res.status(202).json({
-      requested: true,
-      message:
-        'Discovery requested. The worker runs the scan; refresh in a few seconds to see the result.',
-    });
+
+    const run = await waitForRunAfter(before);
+    if (!run) {
+      throw new ApiError(
+        504,
+        'The discovery worker did not respond. Check that the sat-worker container is running.'
+      );
+    }
+    if (run.errors) {
+      throw new ApiError(503, `Discovery failed: ${run.errors}`);
+    }
+    res.json(run);
   })
 );
 

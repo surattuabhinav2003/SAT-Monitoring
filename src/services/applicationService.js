@@ -81,13 +81,18 @@ export async function getDiscoveryState() {
 }
 
 /**
- * Request a discovery pass (designated operators only).
+ * Run a discovery pass and return its result (designated operators only).
  *
- * The API has no Docker access, so this only ASKS the worker to scan and returns
- * 202 immediately. Poll getDiscoveryState() for the result.
+ * The scan executes in the worker, but the API waits for it and returns the real
+ * counts, so the caller gets an outcome rather than an acknowledgement.
+ *
+ * The longer timeout matters: the shared 15s default would abort the request
+ * before the server's 20s wait for the worker could finish.
  */
 export async function runDiscovery() {
-  const { data } = await api.post('/applications/discovery/run');
+  const { data } = await api.post('/applications/discovery/run', null, {
+    timeout: 40_000,
+  });
   return data;
 }
 
