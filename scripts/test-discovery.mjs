@@ -94,26 +94,27 @@ async function waitForIdle(timeoutMs = 30_000) {
 }
 
 /**
- * Ask the worker to scan, then wait until a NEW completed run appears.
+ * Run a discovery pass and return the completed run.
  *
- * The API returns 202 without doing the work, so the test observes the worker's
- * completion rather than a return value.
+ * The endpoint notifies the worker and waits for it, so the response IS the
+ * result — no polling needed here. waitForIdle first because the worker coalesces
+ * a request that arrives mid-pass, which would otherwise return the previous run.
  */
 async function sync() {
   await waitForIdle();
   const before = await latestRunId();
 
   const r = await req('/applications/discovery/run', { method: 'POST' });
-  if (r.status !== 202) {
-    throw new Error(`discovery request failed: ${r.status} ${JSON.stringify(r.body)}`);
+  if (r.status !== 200) {
+    throw new Error(`discovery run failed: ${r.status} ${JSON.stringify(r.body)}`);
   }
-
-  for (let i = 0; i < 60; i += 1) {
-    await sleep(500);
-    const run = await latestRun();
-    if (run && run.id > before && run.completedAt) return run;
+  if (!r.body?.completedAt) {
+    throw new Error(`run did not complete: ${JSON.stringify(r.body)}`);
   }
-  throw new Error('worker did not complete a discovery run in time');
+  if (!(r.body.id > before)) {
+    throw new Error(`stale run returned (${r.body.id} <= ${before})`);
+  }
+  return r.body;
 }
 
 async function apps() {
@@ -161,8 +162,27 @@ console.log('\nWaiting for the test API…');
   console.log('API ready.\n');
 }
 
+/**
+ * Clear the test database so the suite is repeatable.
+ *
+ * Several tests assert first-discovery behaviour (pending_review, "no URL
+ * invented", approval), which only holds for rows this run created. Without this
+ * the suite passes once on a fresh stack and then fails on its own leftovers.
+ *
+ * `admins` is deliberately preserved — the seeded admin is what authorises the
+ * requests the suite makes.
+ */
+async function resetDatabase() {
+  await docker([
+    'exec', 'sattest-db', 'psql', '-U', 'sat', '-d', 'sat_test', '-c',
+    'TRUNCATE applications, notifications, application_events, discovery_runs RESTART IDENTITY CASCADE;',
+  ]);
+}
+
 console.log('SETUP: clearing leftovers from any previous run');
 await removeIfPresent('sattest-tool4');
+await resetDatabase();
+console.log('   database reset (applications, notifications, events, runs)');
 
 // ---------------------------------------------------------------------------
 console.log('\nTEST A: the API has no Docker privileges');
@@ -173,11 +193,17 @@ console.log('\nTEST A: the API has no Docker privileges');
   check('API scheduler disabled', state.body?.enabled === false, String(state.body?.enabled));
 
   await waitForIdle();
+  const t0 = Date.now();
   const r = await req('/applications/discovery/run', { method: 'POST' });
-  check('manual scan is accepted as a REQUEST (202)', r.status === 202, `got ${r.status}`);
-  check('response says it was requested', r.body?.requested === true);
-  // Let that request finish so the next sync() starts from a clean state.
-  await sleep(1000);
+  const ms = Date.now() - t0;
+
+  // The API cannot reach Docker, so the worker does the scan — but the caller
+  // still gets the outcome rather than an acknowledgement.
+  check('manual scan returns the completed run (200)', r.status === 200, `got ${r.status}`);
+  check('response carries real counts', typeof r.body?.containersScanned === 'number', JSON.stringify(r.body));
+  check('run is completed', Boolean(r.body?.completedAt));
+  check('attributed to the caller', r.body?.requestedBy === 'tester@cloudfuze.com', r.body?.requestedBy);
+  check('returns promptly', ms < 15000, `${ms}ms`);
   await waitForIdle();
 }
 
@@ -294,13 +320,13 @@ console.log('\nTEST E: admin metadata survives discovery');
   const r = await req(`/applications/${tool2Id}`, {
     method: 'PUT',
     body: JSON.stringify({
-      team: 'Analytics',
+      team: 'Infra',
       developedBy: 'Platform Team',
       gstackImplemented: true,
       notes: 'Owned by the data guild.',
     }),
   });
-  check('metadata saved', r.status === 200 && r.body?.team === 'Analytics', `got ${r.status}`);
+  check('metadata saved', r.status === 200 && r.body?.team === 'Infra', `got ${r.status}`);
 
   // Server-owned fields must be ignored even when explicitly sent.
   const attack = await req(`/applications/${tool2Id}`, {
@@ -311,7 +337,7 @@ console.log('\nTEST E: admin metadata survives discovery');
       status: 'Inactive',
       source: 'manual',
       discoveryStatus: 'pending_review',
-      team: 'Analytics',
+      team: 'Infra',
     }),
   });
   check('name ignored', attack.body?.name === 'Tool Two', attack.body?.name);
@@ -321,7 +347,7 @@ console.log('\nTEST E: admin metadata survives discovery');
 
   await sync();
   const after = byName(await apps(), 'Tool Two');
-  check('team survives', after?.team === 'Analytics', after?.team);
+  check('team survives', after?.team === 'Infra', after?.team);
   check('developedBy survives', after?.developedBy === 'Platform Team');
   check('gstack survives', after?.gstackImplemented === true);
   check('notes survive', after?.notes === 'Owned by the data guild.');
@@ -363,7 +389,7 @@ console.log('\nTEST G: stop -> Inactive + notification; restart -> recovery');
   check('Inactive', t2?.status === 'Inactive', t2?.status);
   check('discovery_status inactive', t2?.discoveryStatus === 'inactive');
   check('NOT auto-decommissioned', t2?.decommissioned === false);
-  check('metadata intact', t2?.team === 'Analytics');
+  check('metadata intact', t2?.team === 'Infra');
   check('needsReview flagged', t2?.needsReview === true);
   check('docker_state recorded', Boolean(t2?.dockerState), String(t2?.dockerState));
 
@@ -383,7 +409,7 @@ console.log('\nTEST G: stop -> Inactive + notification; restart -> recovery');
   await sync();
   t2 = byName(await apps(), 'Tool Two');
   check('Active again', t2?.status === 'Active', t2?.status);
-  check('metadata intact after recovery', t2?.team === 'Analytics');
+  check('metadata intact after recovery', t2?.team === 'Infra');
   const notes = await notifications();
   check('recovery notification', notes.some((n) => n.type === 'TOOL_RESTORED' && n.applicationName === 'Tool Two'));
   check(
