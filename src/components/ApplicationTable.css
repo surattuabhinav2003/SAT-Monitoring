@@ -130,24 +130,10 @@
   background: var(--bg-hover);
 }
 
-/* Row actions stay out of the way until the row is hovered, so the table reads
-   as data rather than a wall of buttons. Always visible on touch, where there is
-   no hover, and whenever focused for keyboard users. */
+/* Row actions are always visible. Hiding them until hover made the approve
+   button undiscoverable and left them unreachable on touch. */
 .col-actions .row-action {
-  opacity: 0;
-  transition: opacity 0.14s ease, background 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.data-table tbody tr:hover .row-action,
-.data-table tbody tr:focus-within .row-action {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .col-actions .row-action {
-    opacity: 1;
-  }
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .cell-name {
