@@ -162,10 +162,20 @@
 .url-link {
   color: var(--accent);
   text-decoration: none;
+  font-weight: var(--fw-medium);
 }
 
 .url-link:hover {
   text-decoration: underline;
+}
+
+/* The shared domain, named once in the column header instead of on every row. */
+.th-note {
+  margin-left: 6px;
+  font-weight: var(--fw-regular);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
 }
 
 .empty-row {

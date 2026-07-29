@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   compareValues,
   prettyUrl,
+  shortHost,
+  commonHostSuffix,
   lifecycleOf,
   liveStateOf,
   badgeClassFor,
@@ -83,6 +85,16 @@ export default function ApplicationTable({
     return rows;
   }, [applications, lifecycleFilter, gstackFilter, search]);
 
+  /**
+   * Domain every application shares, if any — computed across the WHOLE list,
+   * not the current page, so the column does not change meaning as you paginate
+   * or filter.
+   */
+  const sharedDomain = useMemo(
+    () => commonHostSuffix(applications.map((a) => prettyUrl(a.url)).filter(Boolean)),
+    [applications]
+  );
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -146,7 +158,14 @@ export default function ApplicationTable({
           <thead>
             <tr>
               {COLUMNS.map((col) => (
-                <th key={col.key}>{col.label}</th>
+                <th key={col.key}>
+                  {col.label}
+                  {/* Name the domain that was stripped from every row, so the
+                      shortened values are not ambiguous. */}
+                  {col.key === 'url' && sharedDomain && (
+                    <span className="th-note">.{sharedDomain}</span>
+                  )}
+                </th>
               ))}
               {isAdmin && <th className="col-actions">Actions</th>}
             </tr>
@@ -185,8 +204,11 @@ export default function ApplicationTable({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="url-link"
+                          // The shortened text is for scanning; the tooltip and
+                          // the link itself always carry the full address.
+                          title={app.url}
                         >
-                          {prettyUrl(app.url)}
+                          {shortHost(prettyUrl(app.url), sharedDomain)}
                           {app.urlSource && (
                             <span className="url-source" title={`Resolved from ${app.urlSource}`}>
                               {app.urlSource}

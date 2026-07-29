@@ -22,6 +22,47 @@ export function prettyUrl(value) {
 }
 
 /**
+ * Longest domain suffix shared by every host, or null when there isn't a useful
+ * one.
+ *
+ * Used to drop the part of the hostname that is identical on every row — with
+ * every tool on `*.cftools.live`, repeating it once per row is noise. Computed
+ * from the data rather than hardcoded, so it adapts if tools move to another
+ * domain, and returns null the moment they stop agreeing.
+ *
+ * Requires at least two labels ("cftools.live", never just "live") and refuses
+ * to strip a host down to nothing.
+ */
+export function commonHostSuffix(hosts) {
+  const parts = hosts
+    .filter(Boolean)
+    .map((h) => String(h).toLowerCase().split('.'));
+  if (parts.length < 2) return null;
+
+  const shortest = Math.min(...parts.map((p) => p.length));
+  const shared = [];
+  for (let i = 1; i <= shortest; i += 1) {
+    const label = parts[0][parts[0].length - i];
+    if (parts.every((p) => p[p.length - i] === label)) shared.unshift(label);
+    else break;
+  }
+
+  if (shared.length < 2) return null;
+  // Every host must keep at least one distinguishing label.
+  if (parts.some((p) => p.length <= shared.length)) return null;
+  return shared.join('.');
+}
+
+/** Host with a shared suffix removed; returns the host unchanged if it lacks it. */
+export function shortHost(host, suffix) {
+  if (!host) return host;
+  if (!suffix) return host;
+  const lower = host.toLowerCase();
+  const tail = `.${suffix}`;
+  return lower.endsWith(tail) ? host.slice(0, -tail.length) : host;
+}
+
+/**
  * The LIVE state discovery observed, ignoring the admin's decommission decision.
  *
  * Kept separate from `lifecycleOf` because the two answer different questions,
