@@ -99,7 +99,31 @@
 }
 
 .cell-name {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
+}
+
+/* Flags an application discovery created but nobody has completed yet. */
+.needs-detail {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.cell-empty {
+  color: var(--text-tertiary);
+}
+
+.cell-seen {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  white-space: nowrap;
 }
 
 .url-link {

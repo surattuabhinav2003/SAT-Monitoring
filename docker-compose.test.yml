@@ -1,0 +1,112 @@
+# ===========================================================================
+# SAT Monitoring — local discovery test harness
+#
+# Brings up an isolated database, an API, a standalone discovery worker, and
+# three fake "tools" you can start and stop to exercise the discovery flows.
+#
+#   docker compose -f docker-compose.test.yml up -d --build
+#   node scripts/test-discovery.mjs
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Everything here is separate from the normal stack: its own project name,
+# volume and ports (API 4200, DB 5434), so your real data is never touched.
+#
+# Run with an explicit project name so container names stay predictable:
+#   docker compose -p sattest -f docker-compose.test.yml up -d --build
+# ===========================================================================
+
+name: sattest
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sattest-db
+    environment:
+      POSTGRES_DB: sat_test
+      POSTGRES_USER: sat
+      POSTGRES_PASSWORD: sat_test_password
+    ports:
+      - '5434:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sat -d sat_test']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    container_name: sattest-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgres://sat:sat_test_password@db:5432/sat_test
+      CORS_ORIGINS: http://localhost:5180
+      SEED_ADMIN_EMAIL: tester@cloudfuze.com
+      ADMIN_ALLOWED_DOMAINS: cloudfuze.com
+      # Auth is bypassed so the test script can call the API without a tenant.
+      DEV_AUTH_BYPASS: 'true'
+      DEV_AUTH_EMAIL: tester@cloudfuze.com
+      # The worker owns the SCHEDULE; the API does not run its own cron.
+      DISCOVERY_ENABLED: 'false'
+      DISCOVERY_BASE_DOMAIN: test.local
+      DISCOVERY_URL_SCHEME: http
+    ports:
+      - '4200:4000'
+    volumes:
+      # The API still needs the socket for the on-demand
+      # POST /applications/discovery/run that the tests use to make each pass
+      # deterministic instead of waiting on the worker's cron. Concurrent passes
+      # are safe: sync() takes a row lock (see discovery/sync.js).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # Standalone worker — the recommended production shape, because only this
+  # container gets the Docker socket rather than the whole API.
+  worker:
+    build: ./backend
+    container_name: sattest-worker
+    command: ['node', 'src/discovery/worker.js']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://sat:sat_test_password@db:5432/sat_test
+      SEED_ADMIN_EMAIL: tester@cloudfuze.com
+      DISCOVERY_ENABLED: 'true'
+      # Every minute, so tests do not wait 5 minutes for a scheduled pass. The
+      # test script also triggers passes directly.
+      DISCOVERY_CRON: '* * * * *'
+      DISCOVERY_BASE_DOMAIN: test.local
+      DISCOVERY_URL_SCHEME: http
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # --- Fake tools -----------------------------------------------------------
+  # Plain web servers standing in for real applications. `sat.url` on tool1
+  # exercises the label path; tool2 and tool3 exercise the name-derived
+  # fallback. `sat.ignore` is covered by the harness in tool3's absence of it.
+  tool1:
+    image: nginx:alpine
+    container_name: sattest-tool1
+    labels:
+      sat.url: tool-one.test.local
+      sat.name: Tool One
+    # nginx is on the infrastructure exclude list, so the label is what makes
+    # this container discoverable — which is exactly the behaviour to prove.
+
+  tool2:
+    image: nginx:alpine
+    container_name: sattest-tool2
+    labels:
+      sat.name: Tool Two
+      sat.url: tool-two.test.local
+
+  tool3:
+    image: nginx:alpine
+    container_name: sattest-tool3
+    labels:
+      sat.name: Tool Three
+      sat.url: tool-three.test.local

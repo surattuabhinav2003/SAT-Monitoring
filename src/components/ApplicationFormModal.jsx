@@ -1,66 +1,57 @@
 import { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
-import { isValidUrl } from '../utils/helpers.js';
 import './ApplicationFormModal.css';
 
 const EMPTY = {
-  name: '',
-  url: '',
   team: '',
   developedBy: '',
-  status: 'Active',
-  decommissioned: false,
   gstackImplemented: false,
+  decommissioned: false,
+  notes: '',
 };
 
 /**
- * Create / edit form for an application, rendered inside a centered modal.
- * @param {object|null} initial  Existing record when editing, null when creating.
+ * Edit an application's BUSINESS METADATA.
+ *
+ * Name, URL and status are discovered from Docker and shown read-only — they
+ * cannot be edited here, and the API ignores them if sent. Only the fields
+ * admins own are editable.
+ *
+ * @param {object} application  The record being edited.
  * @param {Function} onSave  async (payload) => void
  */
-export default function ApplicationFormModal({ open, initial, onClose, onSave }) {
+export default function ApplicationFormModal({ open, application, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY);
-  const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  const isEdit = Boolean(initial);
-
-  // Reset the form whenever the modal opens (or the record changes).
+  // Reset whenever the modal opens (or the record changes).
   useEffect(() => {
     if (open) {
-      setForm(initial ? { ...initial } : EMPTY);
-      setErrors({});
+      setForm({
+        team: application?.team || '',
+        developedBy: application?.developedBy || '',
+        gstackImplemented: Boolean(application?.gstackImplemented),
+        decommissioned: Boolean(application?.decommissioned),
+        notes: application?.notes || '',
+      });
       setSubmitting(false);
     }
-  }, [open, initial]);
+  }, [open, application]);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => ({ ...prev, [field]: undefined }));
-  }
-
-  function validate() {
-    const next = {};
-    if (!form.name.trim()) next.name = 'Application name is required.';
-    if (!form.url.trim()) next.url = 'Application URL is required.';
-    else if (!isValidUrl(form.url.trim())) next.url = 'Enter a valid http(s) URL.';
-    if (!form.team.trim()) next.team = 'Team is required.';
-    if (!form.developedBy.trim()) next.developedBy = 'Developed by is required.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!validate()) return;
     setSubmitting(true);
     try {
       await onSave({
-        ...form,
-        name: form.name.trim(),
-        url: form.url.trim(),
         team: form.team.trim(),
         developedBy: form.developedBy.trim(),
+        gstackImplemented: form.gstackImplemented,
+        decommissioned: form.decommissioned,
+        notes: form.notes.trim(),
       });
     } finally {
       setSubmitting(false);
@@ -68,39 +59,35 @@ export default function ApplicationFormModal({ open, initial, onClose, onSave })
   }
 
   return (
-    <Modal
-      open={open}
-      title={isEdit ? 'Edit Application' : 'Create Application'}
-      onClose={onClose}
-      width={560}
-    >
+    <Modal open={open} title="Edit Application Details" onClose={onClose} width={580}>
       <form className="app-form" onSubmit={handleSubmit} noValidate>
-        <div className="form-field">
-          <label htmlFor="name">Application Name</label>
-          <input
-            id="name"
-            type="text"
-            value={form.name}
-            onChange={(e) => update('name', e.target.value)}
-            placeholder="e.g. Migration Console"
-            className={errors.name ? 'has-error' : ''}
-          />
-          {errors.name && <span className="field-error">{errors.name}</span>}
+        {/* --- Discovered, read-only --- */}
+        <div className="discovered-panel">
+          <p className="discovered-title">
+            Discovered from Docker
+            <span className="discovered-hint">managed automatically</span>
+          </p>
+          <dl className="discovered-grid">
+            <div>
+              <dt>Application Name</dt>
+              <dd>{application?.name || '—'}</dd>
+            </div>
+            <div>
+              <dt>URL</dt>
+              <dd className="discovered-url">{application?.url || '—'}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{application?.status || '—'}</dd>
+            </div>
+            <div>
+              <dt>Last Seen</dt>
+              <dd>{formatSeen(application?.lastSeen)}</dd>
+            </div>
+          </dl>
         </div>
 
-        <div className="form-field">
-          <label htmlFor="url">Application URL</label>
-          <input
-            id="url"
-            type="text"
-            value={form.url}
-            onChange={(e) => update('url', e.target.value)}
-            placeholder="https://app.example.com"
-            className={errors.url ? 'has-error' : ''}
-          />
-          {errors.url && <span className="field-error">{errors.url}</span>}
-        </div>
-
+        {/* --- Admin-owned --- */}
         <div className="form-row">
           <div className="form-field">
             <label htmlFor="team">Team Using</label>
@@ -110,9 +97,7 @@ export default function ApplicationFormModal({ open, initial, onClose, onSave })
               value={form.team}
               onChange={(e) => update('team', e.target.value)}
               placeholder="e.g. Analytics"
-              className={errors.team ? 'has-error' : ''}
             />
-            {errors.team && <span className="field-error">{errors.team}</span>}
           </div>
 
           <div className="form-field">
@@ -123,22 +108,20 @@ export default function ApplicationFormModal({ open, initial, onClose, onSave })
               value={form.developedBy}
               onChange={(e) => update('developedBy', e.target.value)}
               placeholder="e.g. Platform Team"
-              className={errors.developedBy ? 'has-error' : ''}
             />
-            {errors.developedBy && <span className="field-error">{errors.developedBy}</span>}
           </div>
         </div>
 
         <div className="form-row">
           <div className="form-field">
-            <label htmlFor="status">Status</label>
+            <label htmlFor="gstackImplemented">Gstack</label>
             <select
-              id="status"
-              value={form.status}
-              onChange={(e) => update('status', e.target.value)}
+              id="gstackImplemented"
+              value={form.gstackImplemented ? 'yes' : 'no'}
+              onChange={(e) => update('gstackImplemented', e.target.value === 'yes')}
             >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
+              <option value="yes">Gstack Implemented</option>
+              <option value="no">No Gstack Implemented</option>
             </select>
           </div>
 
@@ -156,16 +139,25 @@ export default function ApplicationFormModal({ open, initial, onClose, onSave })
         </div>
 
         <div className="form-field">
-          <label htmlFor="gstackImplemented">Gstack</label>
-          <select
-            id="gstackImplemented"
-            value={form.gstackImplemented ? 'yes' : 'no'}
-            onChange={(e) => update('gstackImplemented', e.target.value === 'yes')}
-          >
-            <option value="yes">Gstack Implemented</option>
-            <option value="no">No Gstack Implemented</option>
-          </select>
+          <label htmlFor="notes">Notes</label>
+          <textarea
+            id="notes"
+            rows={3}
+            value={form.notes}
+            onChange={(e) => update('notes', e.target.value)}
+            placeholder="Context for the team — why it was decommissioned, who to contact, …"
+          />
         </div>
+
+        {/* Decommissioning is the only way an Inactive tool leaves the review
+            queue, so make that explicit rather than leaving it implied. */}
+        {application?.status === 'Inactive' && !form.decommissioned && (
+          <p className="form-note">
+            This application is <strong>Inactive</strong> — its container is not
+            running. Restart it, or mark it Decommissioned to clear it from
+            &ldquo;Requiring Review&rdquo;.
+          </p>
+        )}
 
         <div className="form-actions">
           <button
@@ -183,4 +175,16 @@ export default function ApplicationFormModal({ open, initial, onClose, onSave })
       </form>
     </Modal>
   );
+}
+
+function formatSeen(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

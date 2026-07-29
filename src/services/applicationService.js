@@ -3,14 +3,16 @@ import api from './api.js';
 /**
  * Application data service — backed by PostgreSQL via the REST API.
  *
- * There is no local/dummy fallback: applications are shared data, so they must
- * come from the database rather than from one browser's storage. If the API is
- * unreachable the call rejects and the page surfaces the error.
+ * Applications are DISCOVERED from Docker, not created by hand, so there is no
+ * create and no delete here. Admins update only the business metadata they own
+ * (team, developedBy, gstack, decommissioned, notes); discovery owns identity
+ * and liveness.
  *
- *   GET    /applications
- *   POST   /applications
- *   PUT    /applications/:id
- *   DELETE /applications/:id
+ *   GET  /applications
+ *   PUT  /applications/:id          — admin-owned fields only
+ *   GET  /applications/:id/events   — audit trail
+ *   GET  /applications/discovery    — scheduler state
+ *   POST /applications/discovery/run
  */
 
 /** Coerce a record into the canonical shape (booleans are always booleans). */
@@ -27,19 +29,35 @@ export async function getApplications() {
   return data.map(normalize);
 }
 
-export async function createApplication(payload) {
-  const { data } = await api.post('/applications', payload);
-  return normalize(data);
-}
-
+/**
+ * Update the admin-owned metadata for an application.
+ * Server-owned fields are ignored by the API even if sent.
+ */
 export async function updateApplication(id, payload) {
-  const { data } = await api.put(`/applications/${id}`, payload);
+  const { data } = await api.put(`/applications/${id}`, {
+    team: payload.team,
+    developedBy: payload.developedBy,
+    gstackImplemented: payload.gstackImplemented,
+    decommissioned: payload.decommissioned,
+    notes: payload.notes,
+  });
   return normalize(data);
 }
 
-export async function deleteApplication(id) {
-  await api.delete(`/applications/${id}`);
-  return { success: true };
+export async function getApplicationEvents(id) {
+  const { data } = await api.get(`/applications/${id}/events`);
+  return data;
+}
+
+export async function getDiscoveryState() {
+  const { data } = await api.get('/applications/discovery');
+  return data;
+}
+
+/** Trigger a discovery pass immediately (admin). */
+export async function runDiscovery() {
+  const { data } = await api.post('/applications/discovery/run');
+  return data;
 }
 
 /**

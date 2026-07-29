@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { compareValues, prettyUrl } from '../utils/helpers.js';
+import { useState, useMemo, useEffect } from 'react';
+import { compareValues, prettyUrl, lifecycleOf } from '../utils/helpers.js';
 import './ApplicationTable.css';
 
 const PAGE_SIZE = 8;
@@ -10,34 +10,48 @@ const COLUMNS = [
   { key: 'team', label: 'Team Using' },
   { key: 'developedBy', label: 'Developed By' },
   { key: 'status', label: 'Status' },
-  { key: 'decommissioned', label: 'Decommission Status' },
   { key: 'gstackImplemented', label: 'Gstack' },
+  { key: 'lastSeen', label: 'Last Seen' },
 ];
 
 /**
- * Data table with search, toolbar filters and pagination.
- * Admin-only edit/delete actions render when `isAdmin` is true.
+ * Data table with search, filters and pagination.
  *
- * Rows are always ordered by application name; column sorting was removed at
- * the user's request, so the headers are plain labels.
+ * Applications are discovered, so there is no delete action — inventory history
+ * is permanent. Admins get an edit action for business metadata only.
  */
-export default function ApplicationTable({ applications, isAdmin, onEdit, onDelete }) {
+export default function ApplicationTable({
+  applications,
+  isAdmin,
+  onEdit,
+  initialFilter = 'all',
+  onFilterChange,
+}) {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [decommFilter, setDecommFilter] = useState('all');
+  const [lifecycleFilter, setLifecycleFilter] = useState(initialFilter);
   const [gstackFilter, setGstackFilter] = useState('all');
   const [page, setPage] = useState(1);
 
-  // Derive the visible rows: filter -> search -> name order.
+  // Keep in step when a dashboard card deep-links with a different filter.
+  useEffect(() => {
+    setLifecycleFilter(initialFilter);
+    setPage(1);
+  }, [initialFilter]);
+
   const filtered = useMemo(() => {
     let rows = [...applications];
 
-    if (statusFilter !== 'all') {
-      rows = rows.filter((r) => r.status === statusFilter);
-    }
-    if (decommFilter !== 'all') {
-      const wantDecomm = decommFilter === 'decommissioned';
-      rows = rows.filter((r) => r.decommissioned === wantDecomm);
+    if (lifecycleFilter !== 'all') {
+      rows = rows.filter((r) => {
+        const state = lifecycleOf(r);
+        if (lifecycleFilter === 'review') {
+          // Needs a human decision: discovery says it is down, but nobody has
+          // decommissioned it.
+          return state === 'Inactive';
+        }
+        if (lifecycleFilter === 'incomplete') return !r.team || !r.developedBy;
+        return state.toLowerCase() === lifecycleFilter;
+      });
     }
     if (gstackFilter !== 'all') {
       const wantGstack = gstackFilter === 'implemented';
@@ -52,12 +66,11 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
         )
       );
     }
-    // Fixed, predictable order so pagination stays stable across renders.
+
     rows.sort((a, b) => compareValues(a.name, b.name, 'asc'));
     return rows;
-  }, [applications, statusFilter, decommFilter, gstackFilter, search]);
+  }, [applications, lifecycleFilter, gstackFilter, search]);
 
-  // Pagination math.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice(
@@ -72,9 +85,14 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
     };
   }
 
+  function changeLifecycle(value) {
+    setLifecycleFilter(value);
+    setPage(1);
+    onFilterChange?.(value);
+  }
+
   return (
     <div className="table-panel">
-      {/* Toolbar: search + filters */}
       <div className="table-toolbar">
         <div className="table-search">
           <SearchIcon />
@@ -88,23 +106,15 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
 
         <div className="table-filters">
           <select
-            value={statusFilter}
-            onChange={(e) => resetToFirstPage(setStatusFilter)(e.target.value)}
-            aria-label="Filter by status"
-          >
-            <option value="all">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-
-          <select
-            value={decommFilter}
-            onChange={(e) => resetToFirstPage(setDecommFilter)(e.target.value)}
-            aria-label="Filter by decommission status"
+            value={lifecycleFilter}
+            onChange={(e) => changeLifecycle(e.target.value)}
+            aria-label="Filter by lifecycle state"
           >
             <option value="all">All Applications</option>
-            <option value="active">Not Decommissioned</option>
+            <option value="active">Active</option>
+            <option value="review">Requiring Review</option>
             <option value="decommissioned">Decommissioned</option>
+            <option value="incomplete">Missing Details</option>
           </select>
 
           <select
@@ -119,7 +129,6 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
         </div>
       </div>
 
-      {/* Table */}
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -133,85 +142,76 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
           <tbody>
             {pageRows.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? COLUMNS.length + 1 : COLUMNS.length} className="empty-row">
+                <td
+                  colSpan={isAdmin ? COLUMNS.length + 1 : COLUMNS.length}
+                  className="empty-row"
+                >
                   {applications.length === 0
-                    ? 'No applications yet. Use “Create Application” to add one.'
+                    ? 'No applications discovered yet. Discovery runs every 5 minutes; use “Run Discovery” to scan now.'
                     : 'No applications match your filters.'}
                 </td>
               </tr>
             ) : (
-              pageRows.map((app) => (
-                <tr key={app.id}>
-                  <td className="cell-name">{app.name}</td>
-                  <td>
-                    <a
-                      href={app.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="url-link"
-                    >
-                      {prettyUrl(app.url)}
-                    </a>
-                  </td>
-                  <td>{app.team}</td>
-                  <td>{app.developedBy}</td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        app.status === 'Active' ? 'badge--active' : 'badge--inactive'
-                      }`}
-                    >
-                      {app.status}
-                    </span>
-                  </td>
-                  <td>
-                    {/* This column answers only "is it decommissioned?" — the
-                        Active/Inactive signal belongs to the Status column. */}
-                    <span
-                      className={`badge ${
-                        app.decommissioned ? 'badge--decomm' : 'badge--not-decomm'
-                      }`}
-                    >
-                      {app.decommissioned ? 'Decommissioned' : 'Not Decommissioned'}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        app.gstackImplemented ? 'badge--gstack' : 'badge--no-gstack'
-                      }`}
-                    >
-                      {app.gstackImplemented ? 'Implemented' : 'Not Implemented'}
-                    </span>
-                  </td>
-                  {isAdmin && (
-                    <td className="col-actions">
-                      <button
-                        className="row-action"
-                        onClick={() => onEdit(app)}
-                        aria-label={`Edit ${app.name}`}
-                        title="Edit"
-                      >
-                        <EditIcon />
-                      </button>
-                      <button
-                        className="row-action row-action--danger"
-                        onClick={() => onDelete(app)}
-                        aria-label={`Delete ${app.name}`}
-                        title="Delete"
-                      >
-                        <TrashIcon />
-                      </button>
+              pageRows.map((app) => {
+                const state = lifecycleOf(app);
+                return (
+                  <tr key={app.id}>
+                    <td className="cell-name">
+                      {app.name}
+                      {(!app.team || !app.developedBy) && (
+                        <span
+                          className="needs-detail"
+                          title="Team Using / Developed By not set"
+                        >
+                          Details needed
+                        </span>
+                      )}
                     </td>
-                  )}
-                </tr>
-              ))
+                    <td>
+                      <a
+                        href={app.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="url-link"
+                      >
+                        {prettyUrl(app.url)}
+                      </a>
+                    </td>
+                    <td>{app.team || <span className="cell-empty">—</span>}</td>
+                    <td>{app.developedBy || <span className="cell-empty">—</span>}</td>
+                    <td>
+                      <span className={`badge ${badgeClassFor(state)}`}>{state}</span>
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          app.gstackImplemented ? 'badge--gstack' : 'badge--no-gstack'
+                        }`}
+                      >
+                        {app.gstackImplemented ? 'Implemented' : 'Not Implemented'}
+                      </span>
+                    </td>
+                    <td className="cell-seen">{relativeSeen(app.lastSeen)}</td>
+                    {isAdmin && (
+                      <td className="col-actions">
+                        <button
+                          className="row-action"
+                          onClick={() => onEdit(app)}
+                          aria-label={`Edit details for ${app.name}`}
+                          title="Edit details"
+                        >
+                          <EditIcon />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Footer: result count + pagination */}
       <div className="table-footer">
         <span className="table-count">
           {filtered.length} application{filtered.length !== 1 ? 's' : ''}
@@ -246,6 +246,27 @@ export default function ApplicationTable({ applications, isAdmin, onEdit, onDele
   );
 }
 
+function badgeClassFor(state) {
+  if (state === 'Active') return 'badge--active';
+  if (state === 'Decommissioned') return 'badge--decomm';
+  return 'badge--inactive';
+}
+
+/** "4 minutes ago" — more useful than a timestamp for a liveness column. */
+function relativeSeen(value) {
+  if (!value) return <span className="cell-empty">never</span>;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return <span className="cell-empty">—</span>;
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins === 1) return '1 min ago';
+  if (mins < 60) return `${mins} mins ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 /* --- Inline icons --- */
 function SearchIcon() {
   return (
@@ -260,13 +281,6 @@ function EditIcon() {
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </svg>
-  );
-}
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
     </svg>
   );
 }

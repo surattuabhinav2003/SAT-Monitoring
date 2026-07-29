@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { getUnreadCount } from '../services/notificationService.js';
 import './Sidebar.css';
 
 // Inline SVG icons keep the app dependency-free and crisp at any size.
@@ -26,6 +27,12 @@ const icons = {
       <path d="M9.5 12.2l1.8 1.8 3.4-3.6" />
     </svg>
   ),
+  notifications: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+  ),
 };
 
 // `adminOnly` items are hidden from standard users. The matching route is also
@@ -34,12 +41,21 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: icons.dashboard },
   { to: '/applications', label: 'Applications', icon: icons.applications },
   {
+    to: '/notifications',
+    label: 'Notifications',
+    icon: icons.notifications,
+    badge: 'unread',
+  },
+  {
     to: '/admin-access',
     label: 'Admin Access',
     icon: icons.adminAccess,
     adminOnly: true,
   },
 ];
+
+/** How often the sidebar refreshes the unread badge. */
+const UNREAD_POLL_MS = 60_000;
 
 /** Matches the 768px breakpoint where the sidebar becomes a full-width drawer. */
 function useIsMobile() {
@@ -74,8 +90,33 @@ export default function Sidebar({
   onCloseMobile,
   onToggleCollapse,
 }) {
-  const { user, role, isAdmin, logout } = useAuth();
+  const { user, role, isAdmin, isAuthenticated, logout } = useAuth();
   const isMobile = useIsMobile();
+  const location = useLocation();
+  const [unread, setUnread] = useState(0);
+
+  // Refresh on navigation and on a slow timer, so the badge clears shortly after
+  // notifications are read without needing a global store.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+
+    async function refresh() {
+      try {
+        const count = await getUnreadCount();
+        if (!cancelled) setUnread(count);
+      } catch {
+        // A failed count must never break navigation — leave the last value.
+      }
+    }
+
+    refresh();
+    const id = setInterval(refresh, UNREAD_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isAuthenticated, location.pathname]);
 
   // The mobile drawer is always full width, so the narrow-rail layout must not
   // apply there even if the desktop state is still "collapsed".
@@ -170,9 +211,21 @@ export default function Sidebar({
               onClick={onCloseMobile}
               title={isRailCollapsed ? item.label : undefined}
             >
-              <span className="sidebar-link-icon">{item.icon}</span>
+              <span className="sidebar-link-icon">
+                {item.icon}
+                {/* On the narrow rail the count has nowhere to sit, so show a
+                    dot on the icon instead. */}
+                {item.badge === 'unread' && unread > 0 && isRailCollapsed && (
+                  <span className="sidebar-dot" aria-hidden="true" />
+                )}
+              </span>
               {!isRailCollapsed && (
-                <span className="sidebar-link-label">{item.label}</span>
+                <>
+                  <span className="sidebar-link-label">{item.label}</span>
+                  {item.badge === 'unread' && unread > 0 && (
+                    <span className="sidebar-badge">{unread > 99 ? '99+' : unread}</span>
+                  )}
+                </>
               )}
             </NavLink>
           ))}

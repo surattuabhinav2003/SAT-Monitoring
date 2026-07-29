@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getApplications,
-  createApplication,
   updateApplication,
-  deleteApplication,
 } from '../services/applicationService.js';
 
 /**
- * Encapsulates all application CRUD state so pages/components stay lean.
- * Returns data, loading/error flags, and memoized action creators.
+ * Application state for pages/components.
+ *
+ * There is no add or remove: applications are discovered from Docker and are
+ * never deleted. Admins edit business metadata only.
  */
 export function useApplications() {
   const [applications, setApplications] = useState([]);
@@ -32,21 +32,10 @@ export function useApplications() {
     load();
   }, [load]);
 
-  const addApplication = useCallback(async (payload) => {
-    const created = await createApplication(payload);
-    setApplications((prev) => [created, ...prev]);
-    return created;
-  }, []);
-
   const editApplication = useCallback(async (id, payload) => {
     const updated = await updateApplication(id, payload);
     setApplications((prev) => prev.map((app) => (app.id === id ? updated : app)));
     return updated;
-  }, []);
-
-  const removeApplication = useCallback(async (id) => {
-    await deleteApplication(id);
-    setApplications((prev) => prev.filter((app) => app.id !== id));
   }, []);
 
   return {
@@ -54,8 +43,6 @@ export function useApplications() {
     loading,
     error,
     reload: load,
-    addApplication,
     editApplication,
-    removeApplication,
   };
 }

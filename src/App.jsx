@@ -6,6 +6,7 @@ import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Applications from './pages/Applications.jsx';
 import AdminAccess from './pages/AdminAccess.jsx';
+import Notifications from './pages/Notifications.jsx';
 import NotFound from './pages/NotFound.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/applications" element={<Applications />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route
             path="/admin-access"
             element={

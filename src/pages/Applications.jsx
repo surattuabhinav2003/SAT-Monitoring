@@ -1,71 +1,63 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ApplicationTable from '../components/ApplicationTable.jsx';
 import ApplicationFormModal from '../components/ApplicationFormModal.jsx';
-import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { useApplications } from '../hooks/useApplications.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { runDiscovery, getDiscoveryState } from '../services/applicationService.js';
 import './Applications.css';
 
 /**
- * Applications page: the professional data table plus admin-only create,
- * edit and delete flows.
+ * Applications page.
+ *
+ * The inventory is discovered from Docker — there is no create and no delete.
+ * Admins edit business metadata, and can trigger a discovery pass on demand
+ * rather than waiting for the 5-minute schedule.
  */
 export default function Applications() {
   const { isAdmin } = useAuth();
   const toast = useToast();
-  const {
-    applications,
-    loading,
-    error,
-    addApplication,
-    editApplication,
-    removeApplication,
-  } = useApplications();
+  const { applications, loading, error, reload, editApplication } = useApplications();
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [discovery, setDiscovery] = useState(null);
 
-  function openCreate() {
-    setEditing(null);
-    setFormOpen(true);
-  }
+  // A dashboard card can deep-link here with ?filter=review
+  const initialFilter = searchParams.get('filter') || 'all';
 
-  function openEdit(app) {
-    setEditing(app);
-    setFormOpen(true);
-  }
+  useEffect(() => {
+    getDiscoveryState()
+      .then(setDiscovery)
+      .catch(() => setDiscovery(null));
+  }, []);
 
   async function handleSave(payload) {
     try {
-      if (editing) {
-        await editApplication(editing.id, payload);
-        toast.success('Application updated successfully.');
-      } else {
-        await addApplication(payload);
-        toast.success('Application created successfully.');
-      }
-      setFormOpen(false);
+      await editApplication(editing.id, payload);
+      toast.success('Application details updated.');
       setEditing(null);
     } catch (err) {
       toast.error(err.message || 'Could not save the application.');
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  async function handleSync() {
+    setSyncing(true);
     try {
-      await removeApplication(deleteTarget.id);
-      toast.success(`"${deleteTarget.name}" was deleted.`);
-      setDeleteTarget(null);
+      const stats = await runDiscovery();
+      toast.success(
+        `Discovery complete — ${stats.created} new, ${stats.activated} restored, ${stats.deactivated} stopped.`
+      );
+      await reload();
+      setDiscovery(await getDiscoveryState());
     } catch (err) {
-      toast.error(err.message || 'Could not delete the application.');
+      toast.error(err.message || 'Discovery failed.');
     } finally {
-      setDeleting(false);
+      setSyncing(false);
     }
   }
 
@@ -74,15 +66,29 @@ export default function Applications() {
       <div className="applications-header">
         <div className="page-heading">
           <h1>Applications</h1>
-          <p>Monitor and manage all registered applications.</p>
+          <p>
+            Discovered automatically from Docker. Admins maintain the business
+            details — team, owner, gstack and decommission status.
+          </p>
         </div>
+
         {isAdmin && (
-          <button className="btn btn--primary" onClick={openCreate}>
-            <PlusIcon />
-            Create Application
+          <button className="btn btn--ghost" onClick={handleSync} disabled={syncing}>
+            <RefreshIcon />
+            {syncing ? 'Scanning…' : 'Run Discovery'}
           </button>
         )}
       </div>
+
+      {discovery?.last && (
+        <p className="discovery-meta">
+          Last scan {formatWhen(discovery.last.at)}
+          {discovery.last.ok
+            ? ` — ${discovery.last.seen} container group(s) seen`
+            : ` — failed: ${discovery.last.error}`}
+          {discovery.enabled ? ` · every 5 minutes` : ' · scheduler disabled'}
+        </p>
+      )}
 
       {loading ? (
         <LoadingSpinner label="Loading applications…" />
@@ -94,42 +100,46 @@ export default function Applications() {
         <ApplicationTable
           applications={applications}
           isAdmin={isAdmin}
-          onEdit={openEdit}
-          onDelete={(app) => setDeleteTarget(app)}
+          initialFilter={initialFilter}
+          onFilterChange={(value) => {
+            const next = new URLSearchParams(searchParams);
+            if (value === 'all') next.delete('filter');
+            else next.set('filter', value);
+            setSearchParams(next, { replace: true });
+          }}
+          onEdit={setEditing}
         />
       )}
 
-      {/* Create / edit modal (admins only) */}
+      {/* Edit metadata (admins only) */}
       {isAdmin && (
         <ApplicationFormModal
-          open={formOpen}
-          initial={editing}
-          onClose={() => {
-            setFormOpen(false);
-            setEditing(null);
-          }}
+          open={Boolean(editing)}
+          application={editing}
+          onClose={() => setEditing(null)}
           onSave={handleSave}
         />
       )}
-
-      {/* Delete confirmation */}
-      <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        title="Delete application"
-        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        loading={deleting}
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   );
 }
 
-function PlusIcon() {
+function formatWhen(value) {
+  if (!value) return 'never';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'never';
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins === 1) return '1 minute ago';
+  if (mins < 60) return `${mins} minutes ago`;
+  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function RefreshIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2">
-      <path d="M12 5v14M5 12h14" />
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 12a9 9 0 1 1-3-6.7" />
+      <path d="M21 3v6h-6" />
     </svg>
   );
 }

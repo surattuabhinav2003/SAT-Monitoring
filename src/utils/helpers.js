@@ -21,6 +21,18 @@ export function prettyUrl(value) {
   }
 }
 
+/**
+ * Effective lifecycle state of an application, collapsing the two flags that
+ * discovery and admins each own into the single label a reader cares about.
+ *
+ * Decommissioned wins: once an admin has made that call it is the answer,
+ * regardless of whether a container happens to be running.
+ */
+export function lifecycleOf(app) {
+  if (app?.decommissioned) return 'Decommissioned';
+  return app?.status === 'Active' ? 'Active' : 'Inactive';
+}
+
 // Format an ISO timestamp as a short, readable date (e.g. "28 Jul 2026").
 export function formatDate(value) {
   if (!value) return '—';

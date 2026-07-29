@@ -42,8 +42,25 @@ services:
       # Local development only — see .env.example.
       DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
       DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
+      # --- Docker discovery ---
+      # Set false here if you run the standalone worker instead, so the two do
+      # not both sync.
+      DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-true}
+      DISCOVERY_CRON: ${DISCOVERY_CRON:-*/5 * * * *}
+      DISCOVERY_BASE_DOMAIN: ${DISCOVERY_BASE_DOMAIN:-cftools.live}
+      DISCOVERY_URL_SCHEME: ${DISCOVERY_URL_SCHEME:-https}
+      DISCOVERY_EXCLUDE: ${DISCOVERY_EXCLUDE:-}
     ports:
       - '4000:4000'
+    volumes:
+      # Read-only Docker socket so discovery can enumerate local containers.
+      #
+      # SECURITY: socket access is root-equivalent on the host — `:ro` limits
+      # writes through the API but not what the daemon can be asked to reveal.
+      # For production prefer the standalone worker (see docker-compose.test.yml)
+      # so only that container holds the socket, and set DISCOVERY_ENABLED=false
+      # here.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   sat_pgdata:

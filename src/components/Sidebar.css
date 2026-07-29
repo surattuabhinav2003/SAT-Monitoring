@@ -138,9 +138,36 @@
 }
 
 .sidebar-link-icon {
+  position: relative;
   display: grid;
   place-items: center;
   flex-shrink: 0;
+}
+
+/* Unread notification count, expanded rail. */
+.sidebar-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* Collapsed rail: a dot on the icon, since the count has nowhere to go. */
+.sidebar-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 1.5px solid var(--bg-sidebar);
 }
 
 /* ==========================================================================

@@ -9,18 +9,71 @@ brand guidelines (Poppins, brand blue `#0129AC`).
 
 ## Features
 
+- 🐳 **Automatic discovery** — applications are found from the Docker containers
+  running on the server, every 5 minutes. Nobody adds them by hand.
+- 🔔 **Notifications** when a tool is discovered, stops responding, or recovers
 - 🔐 **Microsoft-only login** via MSAL (Azure Entra ID) with role-based access (Admin / User)
 - 🗄️ **PostgreSQL persistence** — applications and admins are stored server-side and
   shared by everyone who opens the portal
-- 📊 **Dashboard** in two sections — Application Status (Live / Decommissioned /
-  Inactive) and Gstack Implementation — plus two bar charts and a team pie chart.
+- 📊 **Dashboard** with an "Applications Requiring Review" call to action, plus
+  Application Status and Gstack sections, two bar charts and a team pie chart.
   Every card drills down to the applications behind the number.
-- 🗂️ **Applications table** with search, sorting, status / decommission / gstack
-  filters and pagination
-- ➕ **Admin-only** Create / Edit / Delete via a validated modal form
+- 🗂️ **Applications table** with search, lifecycle / gstack filters and pagination
+- ✏️ **Admins maintain business metadata only** — team, owner, gstack, decommission
+  status and notes. Identity and liveness are owned by discovery.
 - 🛡️ **Admin Access page** (admins only) — grant or revoke the Admin role by email
-- 🔔 Toast notifications, loading spinners, and form validation
+- 🧾 **Audit trail** for every status transition
 - 📱 Responsive layout
+
+## How discovery works
+
+```
+Docker containers  ->  Discovery worker  ->  API  ->  PostgreSQL  ->  Dashboard
+```
+
+The worker talks to the **local Docker socket only** — no SSH, no remote host, no
+stored credentials. It runs every 5 minutes and reconciles the inventory:
+
+| Situation | What happens |
+|---|---|
+| New container appears | Application created, `status=Active`, business metadata left blank for an admin |
+| Container still running | `last_seen` refreshed; nothing else touched |
+| Container stopped or gone | `status=Inactive`, one notification raised. **Never deleted, never auto-decommissioned.** |
+| Container comes back | `status=Active`, recovery notification, outage notification resolved |
+
+**Grouping:** containers in the same Compose project count as **one** application,
+so a tool made of frontend + backend + db is a single entry. A `sat.url` or
+`sat.name` label opts a container out of grouping and makes it its own tool.
+
+**Exclusions:** databases, caches and reverse proxies are skipped by image, and
+the portal never inventories itself. `DISCOVERY_EXCLUDE` adds names or projects.
+
+**Field ownership — the rule discovery must never break:**
+
+| Owned by discovery | Owned by admins |
+|---|---|
+| `name`, `url`, `status`, `source`, `first_seen`, `last_seen`, `discovery_status` | `team`, `developed_by`, `gstack_implemented`, `decommissioned`, `notes` |
+
+Discovery never writes an admin-owned column, and the API ignores server-owned
+fields sent to `PUT /applications/:id`. **Only an admin can decommission** — the
+system never makes that call itself.
+
+### Testing discovery locally
+
+An isolated stack with three fake tools, its own database and its own ports:
+
+```bash
+docker compose -p sattest -f docker-compose.test.yml up -d --build
+node scripts/test-discovery.mjs
+docker compose -p sattest -f docker-compose.test.yml down -v
+```
+
+Covers all six acceptance scenarios: auto-create, stop → Inactive + notification,
+restart → recovery, admin metadata surviving a sync, container removal not
+deleting the record, and audit records. 54 assertions.
+
+> If the normal stack is also running on the same machine, keep `sattest` in
+> `DISCOVERY_EXCLUDE` so the harness does not appear in your real inventory.
 
 ## Getting started
 
@@ -87,17 +140,25 @@ grant on the Admin Access page takes effect on that person's next sign-in.
 
 All routes are under `/api`. Errors return `{ "message": "..." }`.
 
-| Method | Endpoint                | Auth       | Purpose                       |
-| ------ | ----------------------- | ---------- | ----------------------------- |
-| GET    | `/api/health`           | public     | Liveness + database check     |
-| GET    | `/api/users/me`         | signed in  | Caller's identity + role      |
-| GET    | `/api/applications`     | signed in  | List applications             |
-| POST   | `/api/applications`     | **admin**  | Create application            |
-| PUT    | `/api/applications/:id` | **admin**  | Update application            |
-| DELETE | `/api/applications/:id` | **admin**  | Delete application            |
-| GET    | `/api/admins`           | **admin**  | List admins                   |
-| POST   | `/api/admins`           | **admin**  | Grant admin access `{ email }`|
-| DELETE | `/api/admins/:id`       | **admin**  | Revoke admin access           |
+| Method | Endpoint                              | Auth      | Purpose                            |
+| ------ | ------------------------------------- | --------- | ---------------------------------- |
+| GET    | `/api/health`                         | public    | Liveness + database + Docker check  |
+| GET    | `/api/users/me`                       | signed in | Caller's identity + role            |
+| GET    | `/api/applications`                   | signed in | List applications                   |
+| PUT    | `/api/applications/:id`               | **admin** | Update **business metadata only**   |
+| GET    | `/api/applications/:id/events`         | signed in | Audit trail                         |
+| GET    | `/api/applications/discovery`          | signed in | Scheduler state + last result       |
+| POST   | `/api/applications/discovery/run`      | **admin** | Trigger a discovery pass now        |
+| GET    | `/api/notifications`                  | signed in | List (filter by `type`, `unread`)   |
+| GET    | `/api/notifications/unread-count`      | signed in | Badge count                         |
+| PUT    | `/api/notifications/:id/read`          | **admin** | Mark one read                       |
+| PUT    | `/api/notifications/read-all`          | **admin** | Mark all read                       |
+| GET    | `/api/admins`                         | **admin** | List admins                         |
+| POST   | `/api/admins`                         | **admin** | Grant admin access `{ email }`      |
+| DELETE | `/api/admins/:id`                     | **admin** | Revoke admin access                 |
+
+There is deliberately **no `POST /api/applications`** (applications are discovered)
+and **no `DELETE`** (inventory history is permanent). Both return `404`.
 
 Server-side rules worth knowing:
 
@@ -136,7 +197,16 @@ backend/
     ├── db.js               # pg Pool, boot-time schema + admin seed
     ├── auth.js             # Azure JWKS verification, requireAuth/requireAdmin
     ├── errors.js           # ApiError, asyncRoute, error handler
-    └── routes/             # applications, admins, users
+    ├── discovery/
+    │   ├── docker.js       # local Docker socket wrapper
+    │   ├── discovery.js    # container -> application mapping, grouping, filters
+    │   ├── sync.js         # reconciliation, notifications, audit (ownership rules)
+    │   ├── scheduler.js    # node-cron loop, overlap guard
+    │   └── worker.js       # standalone worker entrypoint
+    └── routes/             # applications, admins, users, notifications
+
+scripts/
+└── test-discovery.mjs      # discovery acceptance tests
 
 docs/
 └── AZURE-SETUP.md          # App registration guide for the tenant admin

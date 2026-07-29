@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import DashboardCard from '../components/DashboardCard.jsx';
 import Modal from '../components/Modal.jsx';
 import CategoryBarChart from '../components/CategoryBarChart.jsx';
@@ -22,6 +23,13 @@ const CATEGORIES = {
   },
   inactive: {
     title: 'Inactive Applications',
+    match: (a) => a.status === 'Inactive' && !a.decommissioned,
+  },
+  // Discovery says it is down, but no admin has decided what that means yet.
+  // Same predicate as `inactive` — kept separate because it is a call to action
+  // rather than a status breakdown, and it leads to the filtered list.
+  review: {
+    title: 'Applications Requiring Review',
     match: (a) => a.status === 'Inactive' && !a.decommissioned,
   },
   gstack: {
@@ -142,10 +150,30 @@ export default function Dashboard() {
       {isEmpty && (
         <div className="dash-empty">
           <p>
-            No applications have been added yet. Once an admin adds applications
-            on the Applications page, the counts and charts below will fill in.
+            No applications discovered yet. Discovery scans Docker every 5
+            minutes — once it finds your tools, the counts and charts fill in.
           </p>
         </div>
+      )}
+
+      {/* Call to action, above the status breakdown: these need a human
+          decision — restart the tool, or mark it decommissioned. */}
+      {counts.review > 0 && (
+        <Link to="/applications?filter=review" className="dash-review">
+          <span className="dash-review-count">{counts.review}</span>
+          <span className="dash-review-text">
+            <strong>
+              {counts.review === 1
+                ? 'Application requires review'
+                : 'Applications require review'}
+            </strong>
+            <small>
+              Not running, and not marked decommissioned. Restart it, or record
+              the decommission.
+            </small>
+          </span>
+          <span className="dash-review-go">Review →</span>
+        </Link>
       )}
 
       {/* --- Section: application status --- */}

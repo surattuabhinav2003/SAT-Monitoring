@@ -2,14 +2,21 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { ApiError, asyncRoute } from '../errors.js';
 import { requireAuth, requireAdmin } from '../auth.js';
+import { runOnce, getDiscoveryState } from '../discovery/scheduler.js';
 
 const router = Router();
 
-// Reading the inventory needs a signed-in user; changing it needs an admin.
-// This mirrors the UI, where standard users are read-only.
+/**
+ * Applications are DISCOVERED, not created by hand: Docker discovery owns
+ * identity and liveness, and admins own the business metadata.
+ *
+ * There is deliberately no POST route — see the discovery service. Admins edit
+ * only the fields they own, and nothing here can delete an application:
+ * inventory history is permanent.
+ */
 router.use(requireAuth);
 
-/** DB row (snake_case) -> API shape (camelCase) the SPA already expects. */
+/** DB row (snake_case) -> API shape (camelCase) the SPA expects. */
 function toDto(row) {
   return {
     id: row.id,
@@ -20,62 +27,23 @@ function toDto(row) {
     status: row.status,
     decommissioned: row.decommissioned,
     gstackImplemented: row.gstack_implemented,
+    notes: row.notes,
+    source: row.source,
+    discoveryStatus: row.discovery_status,
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+    // True when discovery has stopped seeing it but no admin has decided yet.
+    needsReview: row.status === 'Inactive' && !row.decommissioned,
+    // Business metadata an admin still has to supply.
+    metadataComplete: Boolean(row.team && row.developed_by),
   };
 }
 
 const SELECT = `
   SELECT id, name, url, team, developed_by, status, decommissioned,
-         gstack_implemented
+         gstack_implemented, notes, source, discovery_status, first_seen, last_seen
   FROM applications
 `;
-
-/**
- * Snap a free-text label to the spelling already used for it, matching
- * case-insensitively and ignoring repeated whitespace.
- *
- * Without this, "Migration" and "migration" are stored as two distinct values
- * and every grouping — the team pie chart especially — reports them as two
- * separate teams. First spelling wins, so later entries fall in line with it.
- */
-async function canonicalise(column, value) {
-  const { rows } = await query(
-    `SELECT ${column} AS label
-       FROM applications
-      WHERE lower(${column}) = lower($1)
-      ORDER BY id ASC
-      LIMIT 1`,
-    [value]
-  );
-  return rows.length > 0 ? rows[0].label : value;
-}
-
-/** Validate and normalise an incoming application payload. */
-function readPayload(body) {
-  const name = String(body?.name ?? '').trim();
-  const url = String(body?.url ?? '').trim();
-  // Collapse internal runs of whitespace so "Web  Team" matches "Web Team".
-  const team = String(body?.team ?? '').trim().replace(/\s+/g, ' ');
-  const developedBy = String(body?.developedBy ?? '').trim().replace(/\s+/g, ' ');
-  const status = body?.status === 'Inactive' ? 'Inactive' : 'Active';
-
-  if (!name) throw new ApiError(400, 'Application name is required.');
-  if (!url) throw new ApiError(400, 'Application URL is required.');
-  if (!/^https?:\/\/.+/i.test(url)) {
-    throw new ApiError(400, 'Enter a valid http(s) URL.');
-  }
-  if (!team) throw new ApiError(400, 'Team is required.');
-  if (!developedBy) throw new ApiError(400, 'Developed by is required.');
-
-  return {
-    name,
-    url,
-    team,
-    developedBy,
-    status,
-    decommissioned: Boolean(body?.decommissioned),
-    gstackImplemented: Boolean(body?.gstackImplemented),
-  };
-}
 
 function readId(raw) {
   const id = Number(raw);
@@ -85,102 +53,188 @@ function readId(raw) {
   return id;
 }
 
+/**
+ * Read the ADMIN-OWNED fields from a request body.
+ *
+ * Server-owned fields (name, url, status, source, first_seen, last_seen,
+ * discovery_status) are intentionally ignored even if sent, so an admin cannot
+ * overwrite what discovery owns.
+ */
+function readAdminFields(body) {
+  const out = {};
+
+  if ('team' in body) {
+    const v = String(body.team ?? '').trim().replace(/\s+/g, ' ');
+    out.team = v || null;
+  }
+  if ('developedBy' in body) {
+    const v = String(body.developedBy ?? '').trim().replace(/\s+/g, ' ');
+    out.developedBy = v || null;
+  }
+  if ('gstackImplemented' in body) {
+    out.gstackImplemented = Boolean(body.gstackImplemented);
+  }
+  if ('decommissioned' in body) {
+    out.decommissioned = Boolean(body.decommissioned);
+  }
+  if ('notes' in body) {
+    const v = String(body.notes ?? '').trim();
+    out.notes = v || null;
+  }
+
+  if (Object.keys(out).length === 0) {
+    throw new ApiError(
+      400,
+      'Nothing to update. Editable fields: team, developedBy, gstackImplemented, decommissioned, notes.'
+    );
+  }
+  return out;
+}
+
+/** Snap a label to the spelling already in use (case-insensitive). */
+async function canonicalise(column, value) {
+  if (!value) return value;
+  const { rows } = await query(
+    `SELECT ${column} AS label FROM applications
+      WHERE lower(${column}) = lower($1) ORDER BY id ASC LIMIT 1`,
+    [value]
+  );
+  return rows.length > 0 ? rows[0].label : value;
+}
+
 // GET /api/applications
 router.get(
   '/',
   asyncRoute(async (_req, res) => {
-    // lower(name), not name: the database collation sorts by byte value, which
-    // puts every capitalised name before every lowercase one ("Zebra" before
-    // "apple"). Case-insensitive ordering is what a reader expects.
+    // lower(name): the database collation sorts by byte value, which would put
+    // every capitalised name before every lowercase one.
     const { rows } = await query(`${SELECT} ORDER BY lower(name) ASC, id ASC`);
     res.json(rows.map(toDto));
   })
 );
 
-// POST /api/applications (admin)
-router.post(
-  '/',
-  requireAdmin,
-  asyncRoute(async (req, res) => {
-    const app = readPayload(req.body);
-    app.team = await canonicalise('team', app.team);
-    app.developedBy = await canonicalise('developed_by', app.developedBy);
-    try {
-      const { rows } = await query(
-        `INSERT INTO applications
-           (name, url, team, developed_by, status, decommissioned, gstack_implemented)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, name, url, team, developed_by, status, decommissioned,
-                   gstack_implemented`,
-        [
-          app.name,
-          app.url,
-          app.team,
-          app.developedBy,
-          app.status,
-          app.decommissioned,
-          app.gstackImplemented,
-        ]
-      );
-      res.status(201).json(toDto(rows[0]));
-    } catch (err) {
-      // 23505 = unique_violation on applications_name_key
-      if (err.code === '23505') {
-        throw new ApiError(409, `An application named "${app.name}" already exists.`);
-      }
-      throw err;
-    }
+// GET /api/applications/discovery — status of the discovery loop
+router.get(
+  '/discovery',
+  asyncRoute(async (_req, res) => {
+    res.json(getDiscoveryState());
   })
 );
 
-// PUT /api/applications/:id (admin)
+// POST /api/applications/discovery/run — trigger a pass now (admin)
+router.post(
+  '/discovery/run',
+  requireAdmin,
+  asyncRoute(async (_req, res) => {
+    let stats;
+    try {
+      stats = await runOnce('api');
+    } catch (err) {
+      // Surface the real reason — almost always an unreachable Docker socket —
+      // rather than a generic failure the operator cannot act on.
+      throw new ApiError(503, `Discovery failed: ${err.message}`);
+    }
+    // null means a pass was already in flight, which is a different situation.
+    if (!stats) {
+      throw new ApiError(409, 'A discovery pass is already running. Try again shortly.');
+    }
+    res.json(stats);
+  })
+);
+
+// GET /api/applications/:id/events — audit trail
+router.get(
+  '/:id/events',
+  asyncRoute(async (req, res) => {
+    const id = readId(req.params.id);
+    const { rows } = await query(
+      `SELECT id, event_type, old_value, new_value, actor, created_at
+         FROM application_events
+        WHERE application_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 200`,
+      [id]
+    );
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        eventType: r.event_type,
+        oldValue: r.old_value,
+        newValue: r.new_value,
+        actor: r.actor,
+        createdAt: r.created_at,
+      }))
+    );
+  })
+);
+
+/**
+ * PUT /api/applications/:id (admin)
+ *
+ * Updates ADMIN-OWNED fields only. Server-owned fields in the body are ignored.
+ */
 router.put(
   '/:id',
   requireAdmin,
   asyncRoute(async (req, res) => {
     const id = readId(req.params.id);
-    const app = readPayload(req.body);
-    app.team = await canonicalise('team', app.team);
-    app.developedBy = await canonicalise('developed_by', app.developedBy);
-    try {
-      const { rows } = await query(
-        `UPDATE applications
-            SET name = $1, url = $2, team = $3, developed_by = $4, status = $5,
-                decommissioned = $6, gstack_implemented = $7, updated_at = now()
-          WHERE id = $8
-        RETURNING id, name, url, team, developed_by, status, decommissioned,
-                  gstack_implemented`,
+    const fields = readAdminFields(req.body || {});
+
+    const before = await query(
+      'SELECT decommissioned FROM applications WHERE id = $1',
+      [id]
+    );
+    if (before.rows.length === 0) throw new ApiError(404, 'Application not found.');
+
+    if ('team' in fields) fields.team = await canonicalise('team', fields.team);
+    if ('developedBy' in fields) {
+      fields.developedBy = await canonicalise('developed_by', fields.developedBy);
+    }
+
+    const columnFor = {
+      team: 'team',
+      developedBy: 'developed_by',
+      gstackImplemented: 'gstack_implemented',
+      decommissioned: 'decommissioned',
+      notes: 'notes',
+    };
+
+    const sets = [];
+    const params = [];
+    for (const [key, value] of Object.entries(fields)) {
+      params.push(value);
+      sets.push(`${columnFor[key]} = $${params.length}`);
+    }
+    params.push(id);
+
+    const { rows } = await query(
+      `UPDATE applications SET ${sets.join(', ')}, updated_at = now()
+        WHERE id = $${params.length}
+      RETURNING id, name, url, team, developed_by, status, decommissioned,
+                gstack_implemented, notes, source, discovery_status,
+                first_seen, last_seen`,
+      params
+    );
+
+    // Decommissioning is a business decision — audit who made it.
+    if (
+      'decommissioned' in fields &&
+      fields.decommissioned !== before.rows[0].decommissioned
+    ) {
+      await query(
+        `INSERT INTO application_events
+           (application_id, event_type, old_value, new_value, actor)
+         VALUES ($1, 'APPLICATION_DECOMMISSIONED', $2, $3, $4)`,
         [
-          app.name,
-          app.url,
-          app.team,
-          app.developedBy,
-          app.status,
-          app.decommissioned,
-          app.gstackImplemented,
           id,
+          String(before.rows[0].decommissioned),
+          String(fields.decommissioned),
+          req.user.email,
         ]
       );
-      if (rows.length === 0) throw new ApiError(404, 'Application not found.');
-      res.json(toDto(rows[0]));
-    } catch (err) {
-      if (err.code === '23505') {
-        throw new ApiError(409, `An application named "${app.name}" already exists.`);
-      }
-      throw err;
     }
-  })
-);
 
-// DELETE /api/applications/:id (admin)
-router.delete(
-  '/:id',
-  requireAdmin,
-  asyncRoute(async (req, res) => {
-    const id = readId(req.params.id);
-    const { rowCount } = await query('DELETE FROM applications WHERE id = $1', [id]);
-    if (rowCount === 0) throw new ApiError(404, 'Application not found.');
-    res.json({ success: true });
+    res.json(toDto(rows[0]));
   })
 );
 
