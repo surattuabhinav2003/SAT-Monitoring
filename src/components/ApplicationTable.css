@@ -177,6 +177,15 @@
   font-weight: var(--fw-semibold);
 }
 
+/* Keeps the "details needed" marker pinned beside the name while the name itself
+   truncates. */
+.name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
 /* Flags an application whose business details are still missing. A single
    character keeps it out of the way of the name it annotates; the tooltip and the
    "Missing Details" filter carry the meaning. */

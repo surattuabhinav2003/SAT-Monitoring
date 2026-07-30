@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import TruncatedText from './TruncatedText.jsx';
+import { useAnchoredPopover } from '../hooks/useAnchoredPopover.js';
 import {
   compareValues,
   prettyUrl,
@@ -193,13 +195,15 @@ export default function ApplicationTable({
                 const live = liveStateOf(app);
                 return (
                   <tr key={app.id} className={app.pendingReview ? 'row--pending' : ''}>
-                    <td className="cell-name col-name" title={app.name}>
-                      {app.name}
-                      {(!app.team || !app.developedBy) && !app.pendingReview && (
-                        <span className="needs-detail" title="Team / Developed By not set">
-                          !
-                        </span>
-                      )}
+                    <td className="cell-name col-name">
+                      <span className="name-wrap">
+                        <TruncatedText value={app.name} label="Application name" />
+                        {(!app.team || !app.developedBy) && !app.pendingReview && (
+                          <span className="needs-detail" title="Team / Developed By not set">
+                            !
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="col-url">
                       {app.url ? (
@@ -233,8 +237,8 @@ export default function ApplicationTable({
                     <td className="col-teams">
                       <TeamChips value={app.team} />
                     </td>
-                    <td className="col-text" title={app.developedBy || ''}>
-                      {app.developedBy || <span className="cell-empty">—</span>}
+                    <td className="col-text">
+                      <TruncatedText value={app.developedBy} label="Developed by" />
                     </td>
                     <td>
                       <span className={`badge ${badgeClassFor(live)}`}>{live}</span>
@@ -366,66 +370,12 @@ const TEAM_CHIP_LIMIT = 2;
  */
 function TeamChips({ value }) {
   const teams = parseTeams(value);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState(null);
-  const btnRef = useRef(null);
-  const popRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function onPointerDown(e) {
-      if (
-        !popRef.current?.contains(e.target) &&
-        !btnRef.current?.contains(e.target)
-      ) {
-        setOpen(false);
-      }
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        btnRef.current?.focus();
-      }
-    }
-    // The popover is positioned from a one-off measurement, so it would drift if
-    // the page moved underneath it.
-    function onReflow() {
-      setOpen(false);
-    }
-
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onReflow);
-    window.addEventListener('scroll', onReflow, true);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onReflow);
-      window.removeEventListener('scroll', onReflow, true);
-    };
-  }, [open]);
+  const { open, pos, anchorRef, popRef, toggle } = useAnchoredPopover({ width: 230 });
 
   if (teams.length === 0) return <span className="cell-empty">—</span>;
 
   const shown = teams.slice(0, TEAM_CHIP_LIMIT);
   const hidden = teams.slice(TEAM_CHIP_LIMIT);
-
-  function toggle() {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    const rect = btnRef.current.getBoundingClientRect();
-    const width = 230;
-    setPos({
-      top: rect.bottom + 6,
-      // Clamp so the panel cannot hang off the right edge of the window.
-      left: Math.min(rect.left, window.innerWidth - width - 12),
-      width,
-    });
-    setOpen(true);
-  }
 
   return (
     <span className="team-chips">
@@ -438,7 +388,7 @@ function TeamChips({ value }) {
       {hidden.length > 0 && (
         <>
           <button
-            ref={btnRef}
+            ref={anchorRef}
             type="button"
             className={`team-chip team-chip--more ${open ? 'is-open' : ''}`}
             onClick={toggle}

@@ -1,0 +1,81 @@
+.trunc {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only clipped text becomes interactive, so the column does not fill with
+   affordances for values that already fit. */
+.trunc.is-clipped {
+  cursor: pointer;
+  /* A dotted underline says "there is more here" without competing with the real
+     links in the URL column. */
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-tertiary);
+  text-underline-offset: 3px;
+  transition: color 0.14s ease, text-decoration-color 0.14s ease;
+}
+
+.trunc.is-clipped:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.trunc.is-clipped:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Fixed, for the same reason as the team panel: the cell clips its overflow. */
+.trunc-pop {
+  position: fixed;
+  z-index: 60;
+  padding: 11px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+  animation: trunc-pop-in 0.13s ease-out;
+}
+
+.trunc-pop-head {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.trunc-pop-body {
+  margin: 0;
+  /* Wrapping is the point — the panel is not constrained by the row height. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-heading);
+}
+
+@keyframes trunc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trunc-pop {
+    animation: none;
+  }
+  .trunc.is-clipped {
+    transition: none;
+  }
+}
