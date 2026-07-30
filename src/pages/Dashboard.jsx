@@ -16,6 +16,7 @@ const C = {
   live: '#20cc83',
   warning: '#fe5833',
   inactive: '#9a9a9a',
+  decommNeeded: '#a100ff',
   decommissioned: '#ff1f1f',
   gstack: '#0129ac',
   noGstack: '#c9cbe0',
@@ -26,7 +27,12 @@ const CATEGORIES = {
   live: { title: 'Live Applications', match: (a) => a.status === 'Active' && !a.decommissioned },
   warning: { title: 'Unhealthy Applications', match: (a) => a.status === 'Warning' && !a.decommissioned },
   inactive: { title: 'Inactive Applications', match: (a) => a.status === 'Inactive' && !a.decommissioned },
-  decommissioned: { title: 'Decommissioned Applications', match: (a) => a.decommissioned },
+  decommissioned: { title: 'Decommissioned Applications', match: (a) => a.decommissionState === 'done' },
+  // Flagged for retirement but not yet retired — a work queue, not a status.
+  decommNeeded: {
+    title: 'Need to Decommission',
+    match: (a) => a.decommissionState === 'needed',
+  },
   review: { title: 'Applications Requiring Review', match: (a) => a.needsReview },
   pending: { title: 'Awaiting Approval', match: (a) => a.pendingReview },
   mapping: { title: 'Needing URL Mapping', match: (a) => a.needsMapping },
@@ -217,6 +223,15 @@ export default function Dashboard() {
             onClick={() => setActiveCategory('inactive')}
           />
           <StatTile
+            label="To decommission"
+            value={counts.decommNeeded}
+            tone="warning"
+            loading={loading}
+            icon={<FlagIcon />}
+            hint={counts.decommNeeded > 0 ? 'Flagged, not yet retired' : undefined}
+            onClick={() => setActiveCategory('decommNeeded')}
+          />
+          <StatTile
             label="Decommissioned"
             value={counts.decommissioned}
             tone="muted"
@@ -239,6 +254,7 @@ export default function Dashboard() {
               { label: 'Live', value: counts.live, color: C.live, onClick: () => setActiveCategory('live') },
               { label: 'Unhealthy', value: counts.warning, color: C.warning, onClick: () => setActiveCategory('warning') },
               { label: 'Inactive', value: counts.inactive, color: C.inactive, onClick: () => setActiveCategory('inactive') },
+              { label: 'Need to decommission', value: counts.decommNeeded, color: C.decommNeeded, onClick: () => setActiveCategory('decommNeeded') },
               { label: 'Decommissioned', value: counts.decommissioned, color: C.decommissioned, onClick: () => setActiveCategory('decommissioned') },
             ]}
           />
@@ -380,6 +396,14 @@ function StopIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="10" />
       <path d="M4.93 4.93l14.14 14.14" />
+    </svg>
+  );
+}
+function FlagIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <path d="M4 22v-7" />
     </svg>
   );
 }

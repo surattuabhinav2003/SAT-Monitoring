@@ -19,6 +19,7 @@ import api from './api.js';
 function normalize(app) {
   return {
     ...app,
+    decommissionState: app.decommissionState || 'none',
     decommissioned: Boolean(app.decommissioned),
     gstackImplemented: Boolean(app.gstackImplemented),
   };
@@ -38,7 +39,7 @@ export async function updateApplication(id, payload) {
     team: payload.team,
     developedBy: payload.developedBy,
     gstackImplemented: payload.gstackImplemented,
-    decommissioned: payload.decommissioned,
+    decommissionState: payload.decommissionState,
     notes: payload.notes,
   });
   return normalize(data);

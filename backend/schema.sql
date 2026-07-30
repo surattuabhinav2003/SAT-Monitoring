@@ -7,7 +7,8 @@
 -- Field ownership (enforced in backend/src/discovery/sync.js):
 --   SERVER-OWNED  name, url, status, first_seen, last_seen, source,
 --                 discovery_status, docker_state, health_status, url_source
---   ADMIN-OWNED   team, developed_by, gstack_implemented, decommissioned, notes
+--   ADMIN-OWNED   team, developed_by, gstack_implemented, decommission_state,
+--                 notes
 -- ===========================================================================
 
 CREATE TABLE IF NOT EXISTS applications (
@@ -17,7 +18,6 @@ CREATE TABLE IF NOT EXISTS applications (
   team               TEXT,
   developed_by       TEXT,
   status             TEXT        NOT NULL DEFAULT 'Active',
-  decommissioned     BOOLEAN     NOT NULL DEFAULT FALSE,
   gstack_implemented BOOLEAN     NOT NULL DEFAULT FALSE,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -50,6 +50,48 @@ ALTER TABLE applications ALTER COLUMN team DROP NOT NULL;
 ALTER TABLE applications ALTER COLUMN developed_by DROP NOT NULL;
 -- url becomes nullable: discovery must not invent a hostname it cannot verify.
 ALTER TABLE applications ALTER COLUMN url DROP NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Decommission state.
+--
+-- Replaces the `decommissioned` boolean, which could not express the middle
+-- step that matters in practice: an application flagged for retirement but not
+-- yet retired.
+--
+--   'none'   -> Not Decommissioned
+--   'needed' -> Need to Decommission   (flagged, awaiting action)
+--   'done'   -> Decommissioned
+--
+-- Admin-owned. Discovery never writes it — the system must never decide to
+-- retire an application.
+-- ---------------------------------------------------------------------------
+ALTER TABLE applications
+  ADD COLUMN IF NOT EXISTS decommission_state TEXT NOT NULL DEFAULT 'none';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'applications_decommission_state_chk'
+  ) THEN
+    ALTER TABLE applications ADD CONSTRAINT applications_decommission_state_chk
+      CHECK (decommission_state IN ('none', 'needed', 'done'));
+  END IF;
+END $$;
+
+-- Carry the old boolean across once, then retire it so there is a single source
+-- of truth. Guarded on the column still existing, so this is idempotent.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'applications' AND column_name = 'decommissioned'
+  ) THEN
+    UPDATE applications
+       SET decommission_state = CASE WHEN decommissioned THEN 'done' ELSE 'none' END
+     WHERE decommission_state = 'none';
+    ALTER TABLE applications DROP COLUMN decommissioned;
+  END IF;
+END $$;
 
 -- Widen the status check to include Warning (unhealthy container).
 ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_status_check;

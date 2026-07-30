@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import Modal from './Modal.jsx';
 import { getTeams } from '../services/applicationService.js';
-import { parseTeams } from '../utils/helpers.js';
+import { parseTeams, DECOMMISSION_OPTIONS } from '../utils/helpers.js';
 import './ApplicationFormModal.css';
 
 const EMPTY = {
   team: '',
   developedBy: '',
   gstackImplemented: false,
-  decommissioned: false,
+  decommissionState: 'none',
   notes: '',
 };
 
@@ -54,7 +54,7 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
         team: application?.team || '',
         developedBy: application?.developedBy || '',
         gstackImplemented: Boolean(application?.gstackImplemented),
-        decommissioned: Boolean(application?.decommissioned),
+        decommissionState: application?.decommissionState || 'none',
         notes: application?.notes || '',
       });
       setSubmitting(false);
@@ -73,7 +73,7 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
         team: form.team.trim(),
         developedBy: form.developedBy.trim(),
         gstackImplemented: form.gstackImplemented,
-        decommissioned: form.decommissioned,
+        decommissionState: form.decommissionState,
         notes: form.notes.trim(),
       });
     } finally {
@@ -171,14 +171,17 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
           </div>
 
           <div className="form-field">
-            <label htmlFor="decommissioned">Decommission Status</label>
+            <label htmlFor="decommissionState">Decommission Status</label>
             <select
-              id="decommissioned"
-              value={form.decommissioned ? 'yes' : 'no'}
-              onChange={(e) => update('decommissioned', e.target.value === 'yes')}
+              id="decommissionState"
+              value={form.decommissionState}
+              onChange={(e) => update('decommissionState', e.target.value)}
             >
-              <option value="no">Not Decommissioned</option>
-              <option value="yes">Decommissioned</option>
+              {DECOMMISSION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -196,7 +199,7 @@ export default function ApplicationFormModal({ open, application, onClose, onSav
 
         {/* Decommissioning is the only way an Inactive tool leaves the review
             queue, so make that explicit rather than leaving it implied. */}
-        {application?.status === 'Inactive' && !form.decommissioned && (
+        {application?.status === 'Inactive' && form.decommissionState === 'none' && (
           <p className="form-note">
             This application is <strong>Inactive</strong> — its container is not
             running. Restart it, or mark it Decommissioned to clear it from

@@ -21,6 +21,7 @@ router.use(requireAuth);
 
 function toDto(row) {
   const pending = row.discovery_status === 'pending_review';
+  const state = row.decommission_state || 'none';
   return {
     id: row.id,
     name: row.name,
@@ -29,7 +30,10 @@ function toDto(row) {
     team: row.team,
     developedBy: row.developed_by,
     status: row.status,
-    decommissioned: row.decommissioned,
+    decommissionState: state,
+    // Retained for convenience: "is it fully retired". Read-only — writes go
+    // through decommissionState.
+    decommissioned: state === 'done',
     gstackImplemented: row.gstack_implemented,
     notes: row.notes,
     source: row.source,
@@ -43,16 +47,17 @@ function toDto(row) {
     pendingReview: pending,
     // No sat.url label and no nginx route — an admin must supply the hostname.
     needsMapping: !row.url,
-    // Discovery says it is down and nobody has decided what that means.
-    needsReview: row.status === 'Inactive' && !row.decommissioned && !pending,
+    // Discovery says it is down and nobody has decided what that means. Flagging
+    // it "needed" counts as a decision, so it leaves the queue.
+    needsReview: row.status === 'Inactive' && state === 'none' && !pending,
     metadataComplete: Boolean(row.team && row.developed_by),
   };
 }
 
 const SELECT = `
-  SELECT id, name, url, url_source, team, developed_by, status, decommissioned,
-         gstack_implemented, notes, source, discovery_status, docker_state,
-         health_status, first_seen, last_seen, approved_at, approved_by
+  SELECT id, name, url, url_source, team, developed_by, status,
+         decommission_state, gstack_implemented, notes, source, discovery_status,
+         docker_state, health_status, first_seen, last_seen, approved_at, approved_by
   FROM applications
 `;
 
@@ -61,6 +66,12 @@ function readId(raw) {
   if (!Number.isInteger(id) || id < 1) throw new ApiError(400, 'Invalid application id.');
   return id;
 }
+
+/**
+ * Decommission lifecycle. 'needed' is the middle step a boolean could not
+ * express: flagged for retirement, not yet retired.
+ */
+const DECOMMISSION_STATES = ['none', 'needed', 'done'];
 
 /**
  * Read the ADMIN-OWNED fields from a request body.
@@ -84,7 +95,22 @@ function readAdminFields(body) {
     out.developedBy = v || null;
   }
   if ('gstackImplemented' in body) out.gstackImplemented = Boolean(body.gstackImplemented);
-  if ('decommissioned' in body) out.decommissioned = Boolean(body.decommissioned);
+
+  if ('decommissionState' in body) {
+    const v = String(body.decommissionState ?? '').trim().toLowerCase();
+    if (!DECOMMISSION_STATES.includes(v)) {
+      throw new ApiError(
+        400,
+        `Invalid decommission state. Expected one of: ${DECOMMISSION_STATES.join(', ')}.`
+      );
+    }
+    out.decommissionState = v;
+  } else if ('decommissioned' in body) {
+    // Backwards compatible: a boolean maps onto the two end states. It cannot
+    // express "needed", which is why decommissionState is the field to use.
+    out.decommissionState = body.decommissioned ? 'done' : 'none';
+  }
+
   if ('notes' in body) {
     const v = String(body.notes ?? '').trim();
     out.notes = v || null;
@@ -93,7 +119,7 @@ function readAdminFields(body) {
   if (Object.keys(out).length === 0) {
     throw new ApiError(
       400,
-      'Nothing to update. Editable fields: team, developedBy, gstackImplemented, decommissioned, notes.'
+      'Nothing to update. Editable fields: team, developedBy, gstackImplemented, decommissionState, notes.'
     );
   }
   return out;
@@ -298,9 +324,10 @@ router.post(
           SET discovery_status = CASE WHEN status = 'Inactive' THEN 'inactive' ELSE 'active' END,
               approved_at = now(), approved_by = $2, updated_at = now()
         WHERE id = $1
-      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
-                gstack_implemented, notes, source, discovery_status, docker_state,
-                health_status, first_seen, last_seen, approved_at, approved_by`,
+      RETURNING id, name, url, url_source, team, developed_by, status,
+                decommission_state, gstack_implemented, notes, source,
+                discovery_status, docker_state, health_status, first_seen,
+                last_seen, approved_at, approved_by`,
       [id, req.user.email]
     );
 
@@ -344,9 +371,10 @@ router.put(
       `UPDATE applications
           SET url = $2, url_source = 'manual', updated_at = now()
         WHERE id = $1
-      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
-                gstack_implemented, notes, source, discovery_status, docker_state,
-                health_status, first_seen, last_seen, approved_at, approved_by`,
+      RETURNING id, name, url, url_source, team, developed_by, status,
+                decommission_state, gstack_implemented, notes, source,
+                discovery_status, docker_state, health_status, first_seen,
+                last_seen, approved_at, approved_by`,
       [id, url]
     );
 
@@ -371,7 +399,10 @@ router.put(
     const id = readId(req.params.id);
     const fields = readAdminFields(req.body || {});
 
-    const before = await query('SELECT decommissioned FROM applications WHERE id = $1', [id]);
+    const before = await query(
+      'SELECT decommission_state FROM applications WHERE id = $1',
+      [id]
+    );
     if (before.rows.length === 0) throw new ApiError(404, 'Application not found.');
 
     // Teams are a validated list; developed_by is a single free-text owner.
@@ -384,7 +415,7 @@ router.put(
       team: 'team',
       developedBy: 'developed_by',
       gstackImplemented: 'gstack_implemented',
-      decommissioned: 'decommissioned',
+      decommissionState: 'decommission_state',
       notes: 'notes',
     };
 
@@ -399,19 +430,28 @@ router.put(
     const { rows } = await query(
       `UPDATE applications SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $${params.length}
-      RETURNING id, name, url, url_source, team, developed_by, status, decommissioned,
-                gstack_implemented, notes, source, discovery_status, docker_state,
-                health_status, first_seen, last_seen, approved_at, approved_by`,
+      RETURNING id, name, url, url_source, team, developed_by, status,
+                decommission_state, gstack_implemented, notes, source,
+                discovery_status, docker_state, health_status, first_seen,
+                last_seen, approved_at, approved_by`,
       params
     );
 
     // Decommissioning is a business decision — audit who made it.
-    if ('decommissioned' in fields && fields.decommissioned !== before.rows[0].decommissioned) {
+    if (
+      'decommissionState' in fields &&
+      fields.decommissionState !== before.rows[0].decommission_state
+    ) {
       await query(
         `INSERT INTO application_events
            (application_id, event_type, old_value, new_value, actor)
-         VALUES ($1, 'APPLICATION_DECOMMISSIONED', $2, $3, $4)`,
-        [id, String(before.rows[0].decommissioned), String(fields.decommissioned), req.user.email]
+         VALUES ($1, 'APPLICATION_DECOMMISSION_CHANGED', $2, $3, $4)`,
+        [
+          id,
+          before.rows[0].decommission_state,
+          fields.decommissionState,
+          req.user.email,
+        ]
       );
     }
 

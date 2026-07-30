@@ -105,8 +105,37 @@ export function liveStateOf(app) {
  * Decommissioned wins here: once an admin has made that call it is the answer.
  */
 export function lifecycleOf(app) {
-  if (app?.decommissioned) return 'Decommissioned';
+  if (app?.decommissionState === 'done') return 'Decommissioned';
+  if (app?.decommissionState === 'needed') return 'Need to Decommission';
   return liveStateOf(app);
+}
+
+/**
+ * The three decommission states, with the labels shown to users.
+ *
+ * 'needed' is the middle step a boolean could not express: flagged for
+ * retirement but not yet retired. Admin-owned throughout — the system never
+ * decides to retire an application.
+ */
+export const DECOMMISSION_OPTIONS = [
+  { value: 'none', label: 'Not Decommissioned' },
+  { value: 'needed', label: 'Need to Decommission' },
+  { value: 'done', label: 'Decommissioned' },
+];
+
+/** Label for a decommission state. */
+export function decommissionLabel(state) {
+  return (
+    DECOMMISSION_OPTIONS.find((o) => o.value === (state || 'none'))?.label ||
+    'Not Decommissioned'
+  );
+}
+
+/** Badge class for a decommission state. */
+export function decommissionBadgeClass(state) {
+  if (state === 'done') return 'badge--decomm';
+  if (state === 'needed') return 'badge--decomm-needed';
+  return 'badge--not-decomm';
 }
 
 /** Badge class for a lifecycle label. */
@@ -118,6 +147,8 @@ export function badgeClassFor(state) {
       return 'badge--warning';
     case 'Decommissioned':
       return 'badge--decomm';
+    case 'Need to Decommission':
+      return 'badge--decomm-needed';
     case 'Pending Review':
       return 'badge--pending';
     default:

@@ -8,6 +8,8 @@ import {
   lifecycleOf,
   liveStateOf,
   badgeClassFor,
+  decommissionLabel,
+  decommissionBadgeClass,
 } from '../utils/helpers.js';
 import './ApplicationTable.css';
 
@@ -143,6 +145,7 @@ export default function ApplicationTable({
             <option value="warning">Warning</option>
             <option value="review">Requiring Review</option>
             <option value="mapping">Needs Mapping</option>
+            <option value="need to decommission">Need to Decommission</option>
             <option value="decommissioned">Decommissioned</option>
             <option value="incomplete">Missing Details</option>
           </select>
@@ -243,24 +246,16 @@ export default function ApplicationTable({
                       )}
                     </td>
                     <td>
-                      {/* Admin-owned. The heading supplies the subject, so the cell
-                          only has to answer it. Neutral on "No" so it does not echo
-                          the green Active signal from the Status column. */}
+                      {/* Admin-owned, three states. Neutral when in service so it
+                          does not echo the green Active signal beside it. */}
                       <span
-                        className={`badge ${
-                          app.decommissioned ? 'badge--decomm' : 'badge--not-decomm'
-                        }`}
-                        title={
-                          app.decommissioned
-                            ? 'Decommissioned by an admin'
-                            : 'Not decommissioned — still in service'
-                        }
+                        className={`badge ${decommissionBadgeClass(app.decommissionState)}`}
                       >
-                        {app.decommissioned ? 'Yes' : 'No'}
+                        {decommissionLabel(app.decommissionState)}
                       </span>
                       {/* Decommissioned but still running — the container should
                           have been stopped, so surface it rather than hide it. */}
-                      {app.decommissioned && app.status === 'Active' && (
+                      {app.decommissionState === 'done' && app.status === 'Active' && (
                         <span
                           className="health-note health-note--alert"
                           title="Marked decommissioned but the container is still running"

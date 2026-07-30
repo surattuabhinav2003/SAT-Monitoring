@@ -424,6 +424,13 @@
   color: var(--text-secondary);
 }
 
+/* Flagged for retirement but not yet retired — its own colour, because it is a
+   pending decision rather than either end state. */
+.badge--decomm-needed {
+  background: rgba(161, 0, 255, 0.12);
+  color: #7a00c2;
+}
+
 /* Unhealthy container: degraded, not down. */
 .badge--warning {
   background: var(--warning-soft);

@@ -388,7 +388,7 @@ console.log('\nTEST G: stop -> Inactive + notification; restart -> recovery');
   let t2 = byName(await apps(), 'Tool Two');
   check('Inactive', t2?.status === 'Inactive', t2?.status);
   check('discovery_status inactive', t2?.discoveryStatus === 'inactive');
-  check('NOT auto-decommissioned', t2?.decommissioned === false);
+  check('NOT auto-decommissioned', t2?.decommissionState === 'none', t2?.decommissionState);
   check('metadata intact', t2?.team === 'Infra');
   check('needsReview flagged', t2?.needsReview === true);
   check('docker_state recorded', Boolean(t2?.dockerState), String(t2?.dockerState));
@@ -431,7 +431,7 @@ console.log('\nTEST H: container removal never deletes the application');
   const still = byName(after, 'Tool Four');
   check('NOT deleted', Boolean(still));
   check('marked Inactive', still?.status === 'Inactive', still?.status);
-  check('NOT decommissioned automatically', still?.decommissioned === false);
+  check('NOT decommissioned automatically', still?.decommissionState === 'none', still?.decommissionState);
   check('inventory count unchanged', after.length === before.length, `${before.length} -> ${after.length}`);
   check('history preserved', still?.firstSeen === t4?.firstSeen);
 
@@ -450,18 +450,18 @@ console.log('\nTEST I: decommissioning is an admin decision, audited');
   const t4 = byName(await apps(), 'Tool Four');
   const r = await req(`/applications/${t4.id}`, {
     method: 'PUT',
-    body: JSON.stringify({ decommissioned: true, notes: 'Replaced by Tool One.' }),
+    body: JSON.stringify({ decommissionState: 'done', notes: 'Replaced by Tool One.' }),
   });
-  check('admin can decommission', r.status === 200 && r.body?.decommissioned === true);
+  check('admin can decommission', r.status === 200 && r.body?.decommissionState === 'done', r.body?.decommissionState);
   check('leaves the review queue', r.body?.needsReview === false);
 
   const ev = await events(t4.id);
-  const dec = ev.find((e) => e.eventType === 'APPLICATION_DECOMMISSIONED');
+  const dec = ev.find((e) => e.eventType === 'APPLICATION_DECOMMISSION_CHANGED');
   check('decommission audited', Boolean(dec));
   check('attributed to the admin', dec?.actor === 'tester@cloudfuze.com', dec?.actor);
 
   await sync();
-  check('discovery leaves it decommissioned', byName(await apps(), 'Tool Four')?.decommissioned === true);
+  check('discovery leaves it decommissioned', byName(await apps(), 'Tool Four')?.decommissionState === 'done');
 }
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { discover } from './discovery.js';
  *   discovery_status, docker_state, health_status, container_key
  *
  * It must NEVER write an admin-owned column:
- *   team, developed_by, gstack_implemented, decommissioned, notes
+ *   team, developed_by, gstack_implemented, decommission_state, notes
  *
  * Every UPDATE below names its columns explicitly for that reason. Do not
  * replace them with a wholesale row update.
@@ -131,7 +131,7 @@ export async function runSync({ trigger = 'scheduled', requestedBy = null } = {}
     // serialises passes; this also guards against manual SQL.)
     const { rows: existing } = await client.query(
       `SELECT id, name, url, url_source, status, discovery_status, container_key,
-              last_seen, decommissioned
+              last_seen, decommission_state
          FROM applications
         WHERE source = 'docker'
         FOR UPDATE`
