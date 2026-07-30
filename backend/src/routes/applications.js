@@ -121,7 +121,8 @@ const TEAM_SPLIT = /\s*(?:,|;|\/|\||\band\b)\s*/i;
  * change. The canonical casing here is what gets stored, whatever case is sent.
  */
 const ALLOWED_TEAMS = (
-  process.env.TEAMS || 'Migration,QA,Infra,Manage,Engineer,AI,SAT,HR'
+  process.env.TEAMS ||
+  'Migration,QA,Infra,Manage,Engineer,AI,SAT,HR,Marketing,Sales'
 )
   .split(',')
   .map((t) => t.trim().replace(/\s+/g, ' '))
