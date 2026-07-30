@@ -122,6 +122,18 @@ export default function ApplicationTable({
     onFilterChange?.(value);
   }
 
+  const isFiltered =
+    search.trim() !== '' || lifecycleFilter !== 'all' || gstackFilter !== 'all';
+
+  function clearAll() {
+    setSearch('');
+    setGstackFilter('all');
+    setPage(1);
+    // Goes through changeLifecycle so the ?filter= query param is cleared too —
+    // otherwise a deep link would silently reapply on the next render.
+    changeLifecycle('all');
+  }
+
   return (
     <div className="table-panel">
       <div className="table-toolbar">
@@ -132,7 +144,26 @@ export default function ApplicationTable({
             placeholder="Search applications…"
             value={search}
             onChange={(e) => resetToFirstPage(setSearch)(e.target.value)}
+            // Escape is the conventional way out of a search field, and costs
+            // nothing to support alongside the button.
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && search) {
+                e.preventDefault();
+                resetToFirstPage(setSearch)('');
+              }
+            }}
           />
+          {search && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => resetToFirstPage(setSearch)('')}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <CloseIcon />
+            </button>
+          )}
         </div>
 
         <div className="table-filters">
@@ -161,6 +192,15 @@ export default function ApplicationTable({
             <option value="implemented">Gstack Implemented</option>
             <option value="not-implemented">No Gstack Implemented</option>
           </select>
+
+          {/* One way out of any combination of search and filters, rather than
+              leaving a reload as the only reset. */}
+          {isFiltered && (
+            <button type="button" className="filters-clear" onClick={clearAll}>
+              <CloseIcon />
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -183,9 +223,21 @@ export default function ApplicationTable({
                   colSpan={isAdmin ? COLUMNS.length + 1 : COLUMNS.length}
                   className="empty-row"
                 >
-                  {applications.length === 0
-                    ? 'No applications discovered yet. The worker scans Docker every 5 minutes.'
-                    : 'No applications match your filters.'}
+                  {applications.length === 0 ? (
+                    'No applications discovered yet. The worker scans Docker every 5 minutes.'
+                  ) : (
+                    <>
+                      No applications match your filters.
+                      {isFiltered && (
+                        <>
+                          {' '}
+                          <button type="button" className="link-btn" onClick={clearAll}>
+                            Clear filters
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
                 </td>
               </tr>
             ) : (
@@ -466,6 +518,14 @@ function ExternalIcon() {
     >
       <path d="M7 17L17 7" />
       <path d="M9 7h8v8" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
 }
